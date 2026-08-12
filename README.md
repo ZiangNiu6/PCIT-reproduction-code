@@ -72,13 +72,73 @@ The complete simulation workflow requires Nextflow and pins the
 `katsevich-lab/simulatr-pipeline` workflow to commit
 `dd2f1fcdb533a7764f05dd9dd05b175b02b264a8`. It uses Nextflow's `standard`
 profile by default; set `PCIT_NEXTFLOW_PROFILE=local` for an interactive run.
-The complete CCLE
-workflow runs locally by default; the domain-level `submit-ccle.sh` also
-supports SGE submission.  The complete Frangieh workflow requires an SGE
-cluster and the processed `ondisc` data.  The `plot-only` workflows require
+The complete CCLE workflow runs locally by default. It first runs a small,
+data-independent matched-calibration smoke test, then runs all 60 setups,
+strictly combines them, and regenerates the figures. The domain-level
+`submit-ccle.sh` supports asynchronous SGE submission for the full rerun; see
+the CCLE instructions below. The complete Frangieh workflow requires an SGE
+cluster and the processed `ondisc` data. The `plot-only` workflows require
 only the corresponding saved result files. Supplying fewer than 20 Frangieh
 replicates is useful for a cluster test, but the postprocessor deliberately
 requires replicate IDs 1--20 before it will overwrite manuscript figures.
+
+## CCLE matched-calibration v2
+
+The corrected CCLE analysis uses the result namespace
+`ccle-typeI-synthY-30targets-matched-v2`. Within each GCM or PCM pair, normal
+and permutation calibration are applied to the same observed statistic. They
+therefore share the same synthetic response, nuisance fits, and, for PCM, the
+same sample split and learned direction; the pair differs only in its
+reference distribution. This is a calibration comparison, not a comparison
+of two independently fitted test statistics.
+
+The runner assigns deterministic, purpose-specific random-number streams to
+the synthetic response, PCM split, permutation stream, and learner roles.
+Consequently, adaptive permutation stopping or changing method execution
+order does not alter later responses, splits, or nuisance fits. Each per-setup
+RDS records the schema and provenance needed by the combiner to verify this
+contract.
+
+The v2 filenames deliberately differ from the legacy unmatched filenames.
+The v2 combiner and plotter accept only the matched-v2 schema, so old results
+cannot be silently mixed into the corrected figures. Per-setup results and
+the combined result are written under `$LOCAL_PDRT_DATA_DIR/ccle`; the
+combined file is
+`ccle-typeI-synthY-30targets-matched-v2-results.rds`.
+
+For a local full rerun, use
+
+```bash
+./run_all_semi_synthetic.sh full
+```
+
+For an SGE rerun, first restore the repository environment, export its library
+path for the `--vanilla` smoke test and Grid Engine workers, and then submit
+one job per setup:
+
+```bash
+RENV_CONFIG_SANDBOX_ENABLED=FALSE Rscript -e 'renv::restore(prompt = FALSE)'
+R_LIBS_USER="$(RENV_CONFIG_SANDBOX_ENABLED=FALSE Rscript -e \
+  'cat(paste(.libPaths(), collapse = ":"))' | tail -n 1)"
+export R_LIBS_USER
+Rscript --vanilla reproduction-code/semi-synthetic-analysis/smoke-test-matched-calibration.R
+bash reproduction-code/semi-synthetic-analysis/submit-ccle.sh
+```
+
+The submission script automatically sources `~/.research_config` with export
+enabled, so `LOCAL_PDRT_DATA_DIR` and other configured paths are inherited by
+the Grid Engine workers through `qsub -V`. The configured paths must be visible
+at the same location on every compute node. `PROJECT` and `MEM` optionally
+override the SGE project and per-job memory request. After all 60 jobs have
+finished successfully, run
+
+```bash
+./run_all_semi_synthetic.sh plot-only
+```
+
+If the matched-v2 combined RDS is absent, `plot-only` strictly validates and
+combines all 60 per-setup files before plotting. If it is already present,
+the plotter validates and uses it. Legacy combined results are ignored.
 
 The corrected Frangieh workflow uses schema
 `perturb_score5_v2_nonpositive_nulls`; legacy v1 results are not accepted as
