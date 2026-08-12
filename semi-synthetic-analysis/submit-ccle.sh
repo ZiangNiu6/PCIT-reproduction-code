@@ -83,6 +83,18 @@ if ! command -v Rscript >/dev/null 2>&1; then
   exit 1
 fi
 
+# The workers run `Rscript --vanilla`, which bypasses the renv autoloader, so put the
+# renv project library on R_LIBS_USER (exported for qsub -V jobs and --local Rscript
+# calls).  Guarded so a caller that already exported R_LIBS_USER (e.g.
+# run_all_semi_synthetic.sh) is left untouched.  tail -n 1 drops any renv "packages not
+# installed" notice the autoloader prints to stdout, which would otherwise corrupt the path.
+if [[ -z "${R_LIBS_USER:-}" ]]; then
+  RENV_CONFIG_SANDBOX_ENABLED=FALSE Rscript -e 'renv::restore(prompt = FALSE)'
+  R_LIBS_USER="$(cd -- "$project_root" && RENV_CONFIG_SANDBOX_ENABLED=FALSE \
+    Rscript -e 'cat(paste(.libPaths(), collapse = ":"))' | tail -n 1)"
+  export R_LIBS_USER
+fi
+
 echo "Project root:        $project_root"
 echo "Runner script:       $runner"
 echo "Result namespace:    matched-v2"
