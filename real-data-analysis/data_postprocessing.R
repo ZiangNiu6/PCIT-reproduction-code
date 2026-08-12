@@ -273,7 +273,10 @@ rep_objects <- Map(
   function(path) validate_rep(readRDS(path), path),
   rep_files
 )
-rep_ids <- vapply(rep_objects, function(x) as.integer(x$result$rep), integer(1))
+# unname(): Map() names rep_objects by rep_files, and vapply() propagates those
+# names, so without this sort(rep_ids) carries a names attribute and
+# identical(..., seq_len(20L)) fails even when the values are exactly 1:20.
+rep_ids <- unname(vapply(rep_objects, function(x) as.integer(x$result$rep), integer(1)))
 if (anyDuplicated(rep_ids)) stop("Duplicate replicate IDs in score result files")
 expected_rep_ids <- seq_len(20L)
 if (!identical(sort(rep_ids), expected_rep_ids)) {
