@@ -41,13 +41,12 @@ if [[ "$mode" != "--local" && "$mode" != "--sge" ]]; then
   exit 2
 fi
 
-# Load the lab configuration when available and export its assignments so
-# Grid Engine workers inherit the configured data paths through qsub -V.
+# Load the lab configuration when available. Required values are embedded
+# explicitly in each job script; the full login environment is not sent to
+# Grid Engine.
 if [[ -f "$HOME/.research_config" ]]; then
-  set -a
   # shellcheck disable=SC1090
   source "$HOME/.research_config"
-  set +a
 fi
 
 if [[ -z "${LOCAL_PDRT_DATA_DIR:-}" ]]; then
@@ -55,7 +54,19 @@ if [[ -z "${LOCAL_PDRT_DATA_DIR:-}" ]]; then
   exit 1
 fi
 
-data_root=${LOCAL_PDRT_DATA_DIR%/}
+script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+project_root=$(cd -- "$script_dir/../.." && pwd)
+runner="$script_dir/ccle-typeI-synthY-30targets.R"
+
+data_root=$LOCAL_PDRT_DATA_DIR
+if [[ "$data_root" != /* ]]; then
+  data_root="$project_root/$data_root"
+fi
+if [[ "$data_root" != "/" ]]; then
+  data_root=${data_root%/}
+fi
+export LOCAL_PDRT_DATA_DIR="$data_root"
+
 ccle_dir="$data_root/ccle"
 for input_file in mutation.txt response.csv; do
   if [[ ! -f "$ccle_dir/$input_file" ]]; then
@@ -70,10 +81,6 @@ if [[ ! "$n_setups" =~ ^[1-9][0-9]*$ ]] || (( n_setups > 60 )); then
   exit 2
 fi
 
-script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
-project_root=$(cd -- "$script_dir/../.." && pwd)
-runner="$script_dir/ccle-typeI-synthY-30targets.R"
-
 if [[ ! -f "$runner" ]]; then
   echo "ERROR: Runner script not found: $runner" >&2
   exit 1
@@ -82,21 +89,23 @@ if ! command -v Rscript >/dev/null 2>&1; then
   echo "ERROR: Rscript is not available on PATH." >&2
   exit 1
 fi
+rscript_bin=$(command -v Rscript)
 
 # Jobs run plain `Rscript` after `cd`-ing to the project root, so the renv
 # autoloader (project .Rprofile -> renv/activate.R) puts the project library on
-# the path automatically; no R_LIBS_USER handling is needed here.
+# the path automatically. Only the required data path is embedded in the job.
 echo "Project root:        $project_root"
 echo "Runner script:       $runner"
 echo "Result namespace:    matched-v2"
 echo "Number of setups:    $n_setups"
 echo "LOCAL_PDRT_DATA_DIR: $data_root"
+echo "Rscript:             $rscript_bin"
 
 if [[ "$mode" == "--local" ]]; then
   cd "$project_root"
   for ((setup_idx = 1; setup_idx <= n_setups; setup_idx++)); do
     echo "Running CCLE setup $setup_idx/$n_setups ..."
-    Rscript "$runner" "$setup_idx"
+    "$rscript_bin" "$runner" "$setup_idx"
   done
   echo "Completed $n_setups CCLE setup(s)."
   exit 0
@@ -115,10 +124,9 @@ echo "Memory per job:      $memory"
 for ((setup_idx = 1; setup_idx <= n_setups; setup_idx++)); do
   job_name="ccle_matched_v2_${setup_idx}"
   printf -v job_body \
-    '#!/usr/bin/env bash\nset -euo pipefail\ncd -- %q\nexec Rscript %q %q\n' \
-    "$project_root" "$runner" "$setup_idx"
+    '#!/usr/bin/env bash\nset -euo pipefail\nexport LOCAL_PDRT_DATA_DIR=%q\nexport RENV_CONFIG_SANDBOX_ENABLED=FALSE\ncd -- %q\nexec %q %q %q\n' \
+    "$data_root" "$project_root" "$rscript_bin" "$runner" "$setup_idx"
   printf '%s' "$job_body" | qsub \
-    -V \
     -P "$sge_project" \
     -l "m_mem_free=$memory" \
     -cwd \

@@ -112,25 +112,23 @@ For a local full rerun, use
 ./run_all_semi_synthetic.sh full
 ```
 
-For an SGE rerun, first restore the repository environment, export its library
-path for the `--vanilla` smoke test and Grid Engine workers, and then submit
-one job per setup:
+For an SGE rerun, first restore the repository environment, run the smoke
+test, and then submit one job per setup:
 
 ```bash
 RENV_CONFIG_SANDBOX_ENABLED=FALSE Rscript -e 'renv::restore(prompt = FALSE)'
-R_LIBS_USER="$(RENV_CONFIG_SANDBOX_ENABLED=FALSE Rscript -e \
-  'cat(paste(.libPaths(), collapse = ":"))' | tail -n 1)"
-export R_LIBS_USER
-Rscript --vanilla reproduction-code/semi-synthetic-analysis/smoke-test-matched-calibration.R
+Rscript reproduction-code/semi-synthetic-analysis/smoke-test-matched-calibration.R
 bash reproduction-code/semi-synthetic-analysis/submit-ccle.sh
 ```
 
-The submission script automatically sources `~/.research_config` with export
-enabled, so `LOCAL_PDRT_DATA_DIR` and other configured paths are inherited by
-the Grid Engine workers through `qsub -V`. The configured paths must be visible
-at the same location on every compute node. `PROJECT` and `MEM` optionally
-override the SGE project and per-job memory request. After all 60 jobs have
-finished successfully, run
+The submission script automatically sources `~/.research_config`, resolves
+the absolute `Rscript` path, and embeds only that executable and
+`LOCAL_PDRT_DATA_DIR` in each job script. Each worker starts in the project
+root, where the project's `.Rprofile` activates `renv`. The launcher
+deliberately avoids `qsub -V` and does not forward the full login environment.
+The configured paths must be visible at the same location on every compute
+node. `PROJECT` and `MEM` optionally override the SGE project and per-job
+memory request. After all 60 jobs have finished successfully, run
 
 ```bash
 ./run_all_semi_synthetic.sh plot-only
