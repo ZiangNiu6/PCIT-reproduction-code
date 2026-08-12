@@ -1,21 +1,32 @@
 ## Shared visual encoding for GCM/PCM calibration comparisons.
 ##
-## Calibration is encoded by colour, while test type is encoded by line type.
-## Simulation and CCLE plotting scripts source this file so their legends do
-## not drift apart.
+## The simulation figures use calibration colour and test linetype.  The CCLE
+## figures reverse those visual channels so Pearson can appear as a test, not
+## as a calibration method.  Both encodings use the semantic variables created
+## by add_calibration_test_aesthetics().
 
-CALIBRATION_LEVELS <- c("Permutation", "Asymptotic", "Pearson")
+CALIBRATION_LEVELS <- c("Permutation", "Asymptotic", "Not applicable")
 CALIBRATION_COLORS <- c(
   "Permutation" = "#E41A1C",
   "Asymptotic" = "#377EB8",
-  "Pearson" = "#999999"
+  "Not applicable" = "#999999"
+)
+CALIBRATION_LINETYPES <- c(
+  "Permutation" = "solid",
+  "Asymptotic" = "dashed",
+  "Not applicable" = "solid"
 )
 
-TEST_LEVELS <- c("GCM", "PCM", "Baseline")
+TEST_LEVELS <- c("GCM", "PCM", "Pearson")
+TEST_COLORS <- c(
+  "GCM" = "#E41A1C",
+  "PCM" = "#377EB8",
+  "Pearson" = "#999999"
+)
 TEST_LINETYPES <- c(
   "GCM" = "solid",
   "PCM" = "dashed",
-  "Baseline" = "solid"
+  "Pearson" = "solid"
 )
 
 add_calibration_test_aesthetics <- function(data, method_column = "method") {
@@ -23,13 +34,13 @@ add_calibration_test_aesthetics <- function(data, method_column = "method") {
   calibration <- dplyr::case_when(
     grepl("^perm_", method_code) ~ "Permutation",
     grepl("^asym_", method_code) ~ "Asymptotic",
-    method_code %in% c("naive", "pearson") ~ "Pearson",
+    method_code %in% c("naive", "pearson") ~ "Not applicable",
     TRUE ~ NA_character_
   )
   test <- dplyr::case_when(
     grepl("_gcm(_|$)", method_code) ~ "GCM",
     grepl("_pcm(_|$)", method_code) ~ "PCM",
-    method_code %in% c("naive", "pearson") ~ "Baseline",
+    method_code %in% c("naive", "pearson") ~ "Pearson",
     TRUE ~ NA_character_
   )
 
@@ -82,6 +93,34 @@ scale_test_linetype <- function(guide = "legend") {
     name = "Test",
     values = TEST_LINETYPES,
     breaks = TEST_LEVELS[1:2],
+    guide = guide
+  )
+}
+
+scale_test_colour <- function(guide = "legend", name = "Test") {
+  ggplot2::scale_colour_manual(
+    name = name,
+    values = TEST_COLORS,
+    breaks = TEST_LEVELS,
+    guide = guide
+  )
+}
+
+scale_test_fill <- function(guide = "legend", name = "Test") {
+  ggplot2::scale_fill_manual(
+    name = name,
+    values = TEST_COLORS,
+    breaks = TEST_LEVELS,
+    guide = guide
+  )
+}
+
+scale_calibration_linetype <- function(guide = "legend",
+                                       name = "Calibration") {
+  ggplot2::scale_linetype_manual(
+    name = name,
+    values = CALIBRATION_LINETYPES,
+    breaks = CALIBRATION_LEVELS[1:2],
     guide = guide
   )
 }

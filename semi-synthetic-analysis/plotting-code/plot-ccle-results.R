@@ -4,10 +4,9 @@
 #
 # Reads the combined result under $LOCAL_PDRT_DATA_DIR/ccle and writes the QQ,
 # standalone CHIC2 calibration preview, and combined Type-I figure directly to
-# project-progress/combine/figures-and-tables. Calibration is encoded by
-# colour; test type is encoded by line or border type, matching the
-# continuous-regression comparison. Pass --intro-only to regenerate only the
-# standalone CHIC2 calibration preview used as Figure 1.
+# project-progress/combine/figures-and-tables. Test type is encoded by colour;
+# calibration is encoded by line or border type. Pass --intro-only to
+# regenerate only the standalone CHIC2 calibration preview used as Figure 1.
 ###############################################################################
 
 script_args <- commandArgs(trailingOnly = TRUE)
@@ -245,9 +244,9 @@ pv_qq <- pv_long |>
   ungroup()
 
 # ---------------------------------------------------------------------------
-# 3a. Standalone CHIC2 calibration preview for the introduction. This retains
-#     the shared calibration-colour and test-linetype legend without repeating
-#     CHIC2 metadata in a facet strip.
+# 3a. Standalone CHIC2 calibration preview for the introduction. This uses
+#     test colour and calibration border type without repeating CHIC2 metadata
+#     in a facet strip.
 # ---------------------------------------------------------------------------
 wilson_interval <- function(successes, repetitions, confidence = 0.95) {
   z <- stats::qnorm(1 - (1 - confidence) / 2)
@@ -316,10 +315,13 @@ theme_chic2_intro <- theme_bw(base_size = 9) +
     legend.position = "bottom",
     legend.box = "horizontal",
     legend.direction = "horizontal",
-    legend.key.width = grid::unit(0.32, "in"),
-    legend.spacing.x = grid::unit(0.03, "in"),
-    legend.text = element_text(size = 8),
-    legend.title = element_text(size = 8),
+    legend.key.width = grid::unit(0.28, "in"),
+    legend.spacing.x = grid::unit(0.01, "in"),
+    legend.text = element_text(size = 7.2),
+    legend.title = element_text(size = 7.2, margin = margin(r = 2, l = 4)),
+    legend.margin = margin(0, 0, 0, 0),
+    legend.box.margin = margin(0, 0, 0, 0),
+    legend.box.spacing = grid::unit(0.06, "in"),
     plot.margin = margin(3, 2, 8, 2)
   )
 
@@ -332,7 +334,7 @@ p_chic2_bar <- ggplot(
   aes(x = method_label, y = rejection_rate)
 ) +
   geom_col(
-    aes(fill = calibration, linetype = test),
+    aes(fill = test, linetype = calibration),
     colour = "black",
     linewidth = 0.55,
     width = 0.64
@@ -344,7 +346,7 @@ p_chic2_bar <- ggplot(
   ) +
   geom_hline(
     yintercept = 0.05,
-    linetype = "dashed",
+    linetype = "dotted",
     colour = "black",
     linewidth = 0.55
   ) +
@@ -353,8 +355,8 @@ p_chic2_bar <- ggplot(
     vjust = -0.5,
     size = 2.5
   ) +
-  scale_calibration_fill(include_pearson = TRUE) +
-  scale_test_linetype() +
+  scale_test_fill() +
+  scale_calibration_linetype() +
   scale_y_continuous(
     limits = c(0, chic2_bar_upper),
     expand = expansion(mult = c(0, 0.02))
@@ -408,16 +410,16 @@ p_qq <- ggplot(
   aes(
     x = theoretical,
     y = p_value,
-    colour = calibration,
-    linetype = test,
+    colour = test,
+    linetype = calibration,
     group = method_label
   )
 ) +
-  geom_abline(slope = 1, intercept = 0, linetype = "dashed", colour = "grey50") +
+  geom_abline(slope = 1, intercept = 0, linetype = "dotted", colour = "grey50") +
   geom_line(linewidth = 0.6) +
   facet_grid(method_label ~ setup) +
-  scale_calibration_colour(include_pearson = TRUE, guide = "none") +
-  scale_test_linetype(guide = "none") +
+  scale_test_colour(guide = "none") +
+  scale_calibration_linetype(guide = "none") +
   coord_equal(xlim = c(0, 1), ylim = c(0, 1)) +
   labs(x = "Uniform(0,1) quantile", y = "Observed p-value") +
   theme_figure3(base_size = 12) +
@@ -439,7 +441,7 @@ n_setups_per_facet <- rej_long |>
 
 ## Pseudo-log y-axis (asinh-style; handles the few asym-GCM rejection rates
 ## that are exactly zero) with breaks at log decades, which are evenly spaced
-## visually.  The 0.05 nominal level is still flagged via the dashed red line.
+## visually. The 0.05 nominal level is flagged by the dotted black line.
 typeI_y_scale <- scale_y_continuous(
   trans  = scales::pseudo_log_trans(sigma = 0.001, base = 10),
   breaks = c(0.001, 0.01, 0.1, 1),
@@ -470,9 +472,8 @@ rej_chosen <- bind_rows(lapply(chosen_keys, function(k) {
 
 # ---------------------------------------------------------------------------
 # 6. Combined two-row figure: box (60 setups) on top, bars (3 setups) below.
-#    Shared calibration-colour and test-linetype legends at the bottom; x-axis
-#    ticks/labels are removed because the legend identifies the four GCM/PCM
-#    combinations and the Pearson baseline.
+#    Shared test-colour and calibration-linetype legends appear at the bottom;
+#    x-axis labels are omitted because the legends identify all procedures.
 # ---------------------------------------------------------------------------
 strip_x <- theme(axis.text.x  = element_blank(),
                  axis.ticks.x = element_blank(),
@@ -480,23 +481,24 @@ strip_x <- theme(axis.text.x  = element_blank(),
 
 p_box_c <- ggplot(
   rej_long,
-  aes(x = method_label, y = rejection_rate, fill = calibration)
+  aes(x = method_label, y = rejection_rate, fill = test)
 ) +
   geom_boxplot(
-    aes(linetype = test),
+    aes(linetype = calibration),
     colour = "black",
     width = 0.65,
     linewidth = 0.55,
     outlier.size = 0.8,
     alpha = 0.85
   ) +
-  geom_jitter(width = 0.12, height = 0,
-              size = 0.55, alpha = 0.55, colour = "grey30") +
-  geom_hline(yintercept = 0.05, linetype = "dashed",
-             colour = "red", linewidth = 0.6) +
+  geom_jitter(aes(colour = test), width = 0.12, height = 0,
+              size = 0.55, alpha = 0.55, show.legend = FALSE) +
+  geom_hline(yintercept = 0.05, linetype = "dotted",
+             colour = "black", linewidth = 0.6) +
   facet_wrap(~ sparsity_tag, nrow = 1) +
-  scale_calibration_fill(include_pearson = TRUE) +
-  scale_test_linetype() +
+  scale_test_fill() +
+  scale_test_colour(guide = "none") +
+  scale_calibration_linetype() +
   typeI_y_scale +
   labs(y = expression("Empirical Type-I rate at " * alpha * " = 0.05")) +
   guides(
@@ -523,19 +525,19 @@ p_box_c <- ggplot(
 
 p_bar_c <- ggplot(
   rej_chosen,
-  aes(x = method_label, y = rejection_rate, fill = calibration)
+  aes(x = method_label, y = rejection_rate, fill = test)
 ) +
   geom_col(
-    aes(linetype = test),
+    aes(linetype = calibration),
     colour = "black",
     linewidth = 0.55,
     width = 0.7
   ) +
-  geom_hline(yintercept = 0.05, linetype = "dashed",
-             colour = "red", linewidth = 0.6) +
+  geom_hline(yintercept = 0.05, linetype = "dotted",
+             colour = "black", linewidth = 0.6) +
   facet_wrap(~ setup, nrow = 1) +
-  scale_calibration_fill(include_pearson = TRUE) +
-  scale_test_linetype() +
+  scale_test_fill() +
+  scale_calibration_linetype() +
   scale_y_continuous(limits = c(0, 1),
                      breaks = seq(0, 1, by = 0.2),
                      expand = expansion(mult = c(0, 0.02))) +
@@ -569,6 +571,7 @@ legend_plot <- p_bar_c +
     legend.direction = "horizontal",
     legend.text = element_text(size = 11),
     legend.title = element_text(size = 11),
+    legend.key.width = grid::unit(0.40, "in"),
     legend.key = element_rect(colour = NA, fill = NA)
   )
 shared_legend <- cowplot::get_plot_component(
@@ -600,7 +603,7 @@ combined_path <- file.path(
   output_dir,
   "ccle-typeI-synthY-30targets-typeI-combined.pdf"
 )
-ggsave(combined_path, p_combined, width = 12, height = 7.5)
+ggsave(combined_path, p_combined, width = 12, height = 7.8)
 cat("Saved: ", combined_path, "\n", sep = "")
 
 # ---------------------------------------------------------------------------
