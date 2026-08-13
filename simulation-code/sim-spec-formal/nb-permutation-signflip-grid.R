@@ -7,7 +7,7 @@
 # downregulation alternatives.  The first two rows use a correctly specified,
 # high-dispersion NB model with common or rare binary X.  The third row keeps
 # the same continuous-Z mean and exposure models, but lets the true NB size
-# vary smoothly with Z while fitting a common-size NB working model.
+# vary smoothly with Z while estimating a common-size NB working model.
 ###############################################################################
 
 n <- 400L
@@ -86,12 +86,13 @@ make_correct_nb_design <- function(scenario_id, x_prevalence, null_design) {
 
 # The variance-misspecification row uses the same continuous Z and logistic
 # exposure model as the correctly specified rows.  The true NB size
-# theta(Z) = 46 exp(-2.1 Z) decreases smoothly with Z, whereas inference uses
-# the common working size theta_w = 5.  Under CI, both exposure prevalence and
-# true overdispersion increase with Z.  This alignment separates the sampling
-# and information-permutation scales; empirical studentization estimates the
-# two scales separately.  The working size is close to the pseudo-true common
-# NB size (about 5 under the null), rather than an arbitrary misspecification.
+# theta(Z) = 46 exp(-2.1 Z) decreases smoothly with Z, whereas inference
+# estimates one common working size with glm.nb.  Under CI, both exposure
+# prevalence and true overdispersion increase with Z.  This alignment separates
+# the sampling and information-permutation scales; empirical studentization
+# estimates the two scales separately.  Estimating the common size mirrors the
+# analysis used in the correctly specified rows and in the real-data workflow,
+# while remaining misspecified because no scalar size can equal theta(Z).
 make_severe_variance_design <- function(null_design) {
   x_prevalence <- 0.14
   x_slope <- if (null_design == "MI") 0 else ci_x_z_slope
@@ -112,8 +113,8 @@ make_severe_variance_design <- function(null_design) {
     beta_z = 0.5,
     variance_model = "covariate_dependent_nb",
     working_family = "negative_binomial",
-    working_dispersion_mode = "fixed",
-    working_nb_size = 5,
+    working_dispersion_mode = "estimated",
+    working_nb_size = NA_real_,
     nb_dispersion = NA_real_,
     nb_size = NA_real_,
     nb_size_intercept = 46,
@@ -153,7 +154,7 @@ parameter_grid <- do.call(
 )
 
 parameter_grid$nuisance_mode <- "fitted"
-parameter_grid$dgp_schema <- "continuous_nb_dispersion"
+parameter_grid$dgp_schema <- "continuous_nb_dispersion_estimated_theta"
 parameter_grid$fold_change <- exp(parameter_grid$gamma_signal)
 parameter_grid$n <- n
 parameter_grid$B_resample <- B_resample
@@ -186,7 +187,8 @@ parameter_grid <- parameter_grid[, c(
 expected_rows <- 2L * length(scenario_levels) * 5L
 if (nrow(parameter_grid) != expected_rows ||
     any(parameter_grid$nuisance_mode != "fitted") ||
-    any(parameter_grid$dgp_schema != "continuous_nb_dispersion")) {
+    any(parameter_grid$dgp_schema !=
+      "continuous_nb_dispersion_estimated_theta")) {
   stop("Unexpected parameter-grid size or nuisance mode")
 }
 factor_columns <- c("null_design", "scenario_id", "gamma_signal")
@@ -247,8 +249,8 @@ if (max(abs(severe_prevalence - severe_designs$x_prevalence)) > 1e-12 ||
     any(abs(severe_designs$mu0 - 10) > 1e-12) ||
     any(abs(severe_designs$beta_z - 0.5) > 1e-12) ||
     any(severe_designs$working_family != "negative_binomial") ||
-    any(severe_designs$working_dispersion_mode != "fixed") ||
-    any(abs(severe_designs$working_nb_size - 5) > 1e-12) ||
+    any(severe_designs$working_dispersion_mode != "estimated") ||
+    any(!is.na(severe_designs$working_nb_size)) ||
     any(severe_designs$variance_model != "covariate_dependent_nb") ||
     any(abs(severe_designs$nb_size_intercept - 46) > 1e-12) ||
     any(abs(severe_designs$nb_size_z_slope + 2.1) > 1e-12)) {

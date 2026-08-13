@@ -13,7 +13,8 @@
 #   2. parameter-grid R source (or a legacy RDS)
 #
 # By default, the script reads
-#   results/simulation-results/nb-permutation-signflip-continuous-dispersion/
+#   results/simulation-results/
+#     nb-permutation-signflip-continuous-dispersion-estimated-theta/
 #     nb-permutation-signflip_results.rds
 # and writes CSV tables and diagnostic figures beside that file. The two
 # manuscript-focused figures are written directly to figures-and-tables.
@@ -29,7 +30,9 @@ suppressPackageStartupMessages({
 })
 
 sim_name <- "nb-permutation-signflip"
-results_namespace <- "nb-permutation-signflip-continuous-dispersion"
+results_namespace <-
+  "nb-permutation-signflip-continuous-dispersion-estimated-theta"
+expected_schema <- "continuous_nb_dispersion_estimated_theta"
 
 script_argument <- grep(
   "^--file=",
@@ -277,16 +280,10 @@ add_grid_plot_labels <- function(data) {
     "NB dispersion alpha = ", format_number(dispersion_pairs$nb_dispersion),
     " (theta = ", format_number(dispersion_pairs$nb_size), ")"
   )
-  working_size_values <- sort(unique(
-    data$working_nb_size[is.finite(data$working_nb_size)]
-  ))
-  if (length(working_size_values) > 0L) {
+  if (any(data$variance_model == "covariate_dependent_nb")) {
     dispersion_levels <- c(
       dispersion_levels,
-      paste0(
-        "Covariate-dependent truth; working theta = ",
-        format_number(working_size_values)
-      )
+      "Covariate-dependent truth; estimated common theta"
     )
   }
 
@@ -308,10 +305,7 @@ add_grid_plot_labels <- function(data) {
             "NB dispersion alpha = ", format_number(.data$nb_dispersion),
             " (theta = ", format_number(.data$nb_size), ")"
           ),
-          paste0(
-            "Covariate-dependent truth; working theta = ",
-            format_number(.data$working_nb_size)
-          )
+          "Covariate-dependent truth; estimated common theta"
         ),
         levels = dispersion_levels
       ),
@@ -405,10 +399,12 @@ if (length(missing_grid_columns) > 0L) {
 if (anyDuplicated(parameter_grid$grid_id)) {
   stop("Parameter-grid grid_id values must be unique.")
 }
-if (!identical(unique(as.character(parameter_grid$dgp_schema)),
-    "continuous_nb_dispersion")) {
+if (!identical(
+  unique(as.character(parameter_grid$dgp_schema)),
+  expected_schema
+)) {
   stop(
-    "Parameter grid must use dgp_schema = continuous_nb_dispersion; ",
+    "Parameter grid must use dgp_schema = ", expected_schema, "; ",
     "legacy grids are not accepted."
   )
 }
@@ -636,11 +632,11 @@ if (any(is.na(results$ground_truth))) {
   stop("ground_truth may not be missing.")
 }
 if (anyNA(results$dgp_schema) || anyNA(results$implementation_schema) ||
-    any(results$dgp_schema != "continuous_nb_dispersion") ||
-    any(results$implementation_schema != "continuous_nb_dispersion") ||
+    any(results$dgp_schema != expected_schema) ||
+    any(results$implementation_schema != expected_schema) ||
     any(results$implementation_schema != results$dgp_schema)) {
   stop(
-    "Results must carry matching continuous_nb_dispersion DGP and ",
+    "Results must carry matching ", expected_schema, " DGP and ",
     "implementation schemas; legacy outputs are not accepted."
   )
 }
@@ -690,6 +686,14 @@ if (any(
     "NB working dispersion."
   )
 }
+estimated_valid_row <-
+  results$analysis_valid & results$working_dispersion_mode == "estimated"
+if (any(
+  estimated_valid_row &
+    (!is.finite(results$theta_hat) | results$theta_hat <= 0)
+)) {
+  stop("Analysis-valid rows require a finite positive estimated NB size.")
+}
 if (any(
   severe_variance_row &
     (!is.na(results$nb_dispersion) | !is.na(results$nb_size))
@@ -720,9 +724,8 @@ if (any(
       abs(results$beta_z - 0.5) > 1e-12 |
       results$variance_model != "covariate_dependent_nb" |
       results$working_family != "negative_binomial" |
-      results$working_dispersion_mode != "fixed" |
-      !is.finite(results$working_nb_size) |
-      abs(results$working_nb_size - 5) > 1e-12 |
+      results$working_dispersion_mode != "estimated" |
+      !is.na(results$working_nb_size) |
       !is.finite(results$nb_size_intercept) |
       abs(results$nb_size_intercept - 46) > 1e-12 |
       !is.finite(results$nb_size_z_slope) |
@@ -730,8 +733,8 @@ if (any(
 )) {
   stop(
     "Severe-variance rows must use the canonical continuous-Z exposure and ",
-    "mean models, theta(Z) = 46 exp(-2.1 Z), and a fixed common NB working ",
-    "size of 5."
+    "mean models, theta(Z) = 46 exp(-2.1 Z), and a common NB working size ",
+    "estimated by glm.nb."
   )
 }
 if (any(results$analysis_valid & !is.finite(results$statistic))) {

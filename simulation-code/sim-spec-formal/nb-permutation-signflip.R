@@ -10,8 +10,9 @@
 #      dispersion 2 (theta 0.5);
 #   2. rare X: the same model with Pr(X=1)=0.025;
 #   3. variance misspecification: Z ~ N(0,1), marginal Pr(X=1)=0.14,
-#      theta(Z) = 46 exp(-2.1 Z), and a common-size NB working score with
-#      theta_w = 5.  The conditional mean remains correctly specified.
+#      theta(Z) = 46 exp(-2.1 Z), and a common-size NB working score whose
+#      scalar size is estimated by glm.nb.  The conditional mean remains
+#      correctly specified.
 # Under MI, X is independent of Z. Under CI, X depends on Z while X and Y are
 # generated independently conditional on Z at gamma = 0.
 #
@@ -297,7 +298,10 @@ local({
     if (!null_design %in% c("MI", "CI")) {
       stop("null_design must be MI or CI")
     }
-    if (!identical(dgp_schema, "continuous_nb_dispersion")) {
+    if (!identical(
+      dgp_schema,
+      "continuous_nb_dispersion_estimated_theta"
+    )) {
       stop("unexpected DGP schema: ", dgp_schema)
     }
 

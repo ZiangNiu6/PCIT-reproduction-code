@@ -21,7 +21,10 @@ source(specifier_file, local = FALSE)
 
 stopifnot(
   nrow(parameter_grid) == 30L,
-  identical(unique(parameter_grid$dgp_schema), "continuous_nb_dispersion"),
+  identical(
+    unique(parameter_grid$dgp_schema),
+    "continuous_nb_dispersion_estimated_theta"
+  ),
   identical(
     parameter_grid$gamma_signal[
       parameter_grid$null_design == "MI" &
@@ -65,11 +68,16 @@ stopifnot(
   isTRUE(ci_data$success),
   isTRUE(mi_data$success),
   isTRUE(ordinary_data$success),
-  identical(ci_data$dgp_schema, "continuous_nb_dispersion"),
-  identical(ci_data$working_dispersion_mode, "fixed"),
-  identical(as.numeric(ci_data$working_nb_size), 5),
-  identical(as.numeric(ci_data$theta_hat), 5),
-  identical(as.numeric(mi_data$theta_hat), 5),
+  identical(
+    ci_data$dgp_schema,
+    "continuous_nb_dispersion_estimated_theta"
+  ),
+  identical(ci_data$working_dispersion_mode, "estimated"),
+  is.na(ci_data$working_nb_size),
+  is.finite(ci_data$theta_hat),
+  ci_data$theta_hat > 0,
+  is.finite(mi_data$theta_hat),
+  mi_data$theta_hat > 0,
   is.finite(ordinary_data$theta_hat),
   ordinary_data$theta_hat > 0,
   sd(ci_data$propensity) > 0,
@@ -92,7 +100,10 @@ stopifnot(
   all(vapply(outputs, function(x) isTRUE(x$success), logical(1L))),
   all(vapply(
     outputs,
-    function(x) identical(x$implementation_schema, "continuous_nb_dispersion"),
+    function(x) identical(
+      x$implementation_schema,
+      "continuous_nb_dispersion_estimated_theta"
+    ),
     logical(1L)
   )),
   all(vapply(
