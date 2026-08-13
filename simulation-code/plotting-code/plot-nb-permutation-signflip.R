@@ -13,7 +13,7 @@
 #   2. parameter-grid R source (or a legacy RDS)
 #
 # By default, the script reads
-#   results/simulation-results/nb-permutation-signflip/
+#   results/simulation-results/nb-permutation-signflip-continuous-dispersion/
 #     nb-permutation-signflip_results.rds
 # and writes CSV tables and diagnostic figures beside that file. The two
 # manuscript-focused figures are written directly to figures-and-tables.
@@ -29,6 +29,7 @@ suppressPackageStartupMessages({
 })
 
 sim_name <- "nb-permutation-signflip"
+results_namespace <- "nb-permutation-signflip-continuous-dispersion"
 
 script_argument <- grep(
   "^--file=",
@@ -68,7 +69,7 @@ results_file <- if (length(arguments) >= 1L) {
   resolve_path(arguments[[1L]])
 } else {
   file.path(
-    results_root, "simulation-results", sim_name,
+    results_root, "simulation-results", results_namespace,
     paste0(sim_name, "_results.rds")
   )
 }
@@ -99,19 +100,20 @@ results_directory <- dirname(normalizePath(results_file))
 
 required_grid_columns <- c(
   "grid_id", "n", "null_design", "scenario_id", "nuisance_mode",
-  "z_distribution", "z_probability",
+  "dgp_schema",
+  "z_distribution",
   "x_prevalence", "x_intercept", "x_z_slope",
-  "x_probability_z0", "x_probability_z1",
   "mu0", "beta_z", "nb_dispersion", "nb_size",
   "variance_model", "working_family",
-  "variance_factor_z0", "variance_factor_z1",
+  "working_dispersion_mode", "working_nb_size",
+  "nb_size_intercept", "nb_size_z_slope",
   "gamma_signal", "fold_change", "B_resample",
   "alpha", "ground_truth"
 )
 required_output_columns <- c(
   "p.value", "statistic", "success", "failure_reason", "degenerate",
   "theta_hat", "n_exposed", "n_exposed_nonzero",
-  "score_eff_n", "max_score_share"
+  "score_eff_n", "max_score_share", "implementation_schema"
 )
 method_levels <- c(
   "parametric_score",
@@ -146,12 +148,12 @@ scenario_levels <- c(
 scenario_labels <- c(
   "common_nb" = "Common X\nCorrect NB variance",
   "rare_nb" = "Rare X\nCorrect NB variance",
-  "severe_variance" = "Moderately sparse X\nSevere variance misspecification"
+  "severe_variance" = "Moderately sparse X\nCovariate-dependent NB dispersion"
 )
 focused_scenario_labels <- c(
   "common_nb" = "High SNR",
   "rare_nb" = "Low SNR",
-  "severe_variance" = "Misspecified variance"
+  "severe_variance" = "Misspecified NB variance"
 )
 
 theme_spacrt <- function(base_size = 11, remove_major_grid = FALSE) {
@@ -275,10 +277,16 @@ add_grid_plot_labels <- function(data) {
     "NB dispersion alpha = ", format_number(dispersion_pairs$nb_dispersion),
     " (theta = ", format_number(dispersion_pairs$nb_size), ")"
   )
-  if (any(!is.finite(data$nb_dispersion) | !is.finite(data$nb_size))) {
+  working_size_values <- sort(unique(
+    data$working_nb_size[is.finite(data$working_nb_size)]
+  ))
+  if (length(working_size_values) > 0L) {
     dispersion_levels <- c(
       dispersion_levels,
-      "Not applicable under variance misspecification"
+      paste0(
+        "Covariate-dependent truth; working theta = ",
+        format_number(working_size_values)
+      )
     )
   }
 
@@ -300,7 +308,10 @@ add_grid_plot_labels <- function(data) {
             "NB dispersion alpha = ", format_number(.data$nb_dispersion),
             " (theta = ", format_number(.data$nb_size), ")"
           ),
-          "Not applicable under variance misspecification"
+          paste0(
+            "Covariate-dependent truth; working theta = ",
+            format_number(.data$working_nb_size)
+          )
         ),
         levels = dispersion_levels
       ),
@@ -393,6 +404,13 @@ if (length(missing_grid_columns) > 0L) {
 }
 if (anyDuplicated(parameter_grid$grid_id)) {
   stop("Parameter-grid grid_id values must be unique.")
+}
+if (!identical(unique(as.character(parameter_grid$dgp_schema)),
+    "continuous_nb_dispersion")) {
+  stop(
+    "Parameter grid must use dgp_schema = continuous_nb_dispersion; ",
+    "legacy grids are not accepted."
+  )
 }
 parameter_grid$scenario_id <- as.character(parameter_grid$scenario_id)
 if (anyNA(parameter_grid$scenario_id) ||
@@ -563,9 +581,11 @@ results <- results |>
     null_design = as.character(.data$null_design),
     scenario_id = as.character(.data$scenario_id),
     nuisance_mode = as.character(.data$nuisance_mode),
+    dgp_schema = as.character(.data$dgp_schema),
     z_distribution = as.character(.data$z_distribution),
     variance_model = as.character(.data$variance_model),
-    working_family = as.character(.data$working_family)
+    working_family = as.character(.data$working_family),
+    working_dispersion_mode = as.character(.data$working_dispersion_mode)
   ) |>
   unnest_wider("output", strict = FALSE, names_repair = "check_unique")
 
@@ -587,6 +607,7 @@ if (length(missing_methods) > 0L) {
 
 results <- results |>
   mutate(
+    implementation_schema = as.character(.data$implementation_schema),
     ground_truth = as_logical_strict(.data$ground_truth, "ground_truth"),
     success_flag = as_logical_strict(.data$success, "success"),
     degenerate_flag = as_logical_strict(.data$degenerate, "degenerate"),
@@ -614,6 +635,15 @@ results <- results |>
 if (any(is.na(results$ground_truth))) {
   stop("ground_truth may not be missing.")
 }
+if (anyNA(results$dgp_schema) || anyNA(results$implementation_schema) ||
+    any(results$dgp_schema != "continuous_nb_dispersion") ||
+    any(results$implementation_schema != "continuous_nb_dispersion") ||
+    any(results$implementation_schema != results$dgp_schema)) {
+  stop(
+    "Results must carry matching continuous_nb_dispersion DGP and ",
+    "implementation schemas; legacy outputs are not accepted."
+  )
+}
 unexpected_nuisance_modes <- setdiff(unique(results$nuisance_mode), "fitted")
 if (length(unexpected_nuisance_modes) > 0L) {
   stop(
@@ -630,6 +660,9 @@ if (any(!is.finite(results$x_prevalence) | results$x_prevalence <= 0)) {
 }
 severe_variance_row <- results$scenario_id == "severe_variance"
 ordinary_nb_row <- !severe_variance_row
+if (any(results$z_distribution != "normal")) {
+  stop("Every focused scenario must use Z distributed as N(0, 1).")
+}
 if (any(
   ordinary_nb_row &
     (!is.finite(results$nb_dispersion) | results$nb_dispersion <= 0 |
@@ -644,10 +677,62 @@ if (any(
   stop("nb_size must equal 1 / nb_dispersion in ordinary NB rows.")
 }
 if (any(
+  ordinary_nb_row &
+    (results$variance_model != "constant_nb" |
+      results$working_family != "negative_binomial" |
+      results$working_dispersion_mode != "estimated" |
+      !is.na(results$working_nb_size) |
+      !is.na(results$nb_size_intercept) |
+      !is.na(results$nb_size_z_slope))
+)) {
+  stop(
+    "Ordinary NB rows require a constant-NB outcome and an estimated common ",
+    "NB working dispersion."
+  )
+}
+if (any(
   severe_variance_row &
     (!is.na(results$nb_dispersion) | !is.na(results$nb_size))
 )) {
   stop("nb_dispersion and nb_size must be NA in severe-variance rows.")
+}
+if (any(
+  severe_variance_row &
+    (!is.finite(results$x_prevalence) |
+      abs(results$x_prevalence - 0.14) > 1e-12 |
+      !is.finite(results$x_z_slope) |
+      abs(
+        results$x_z_slope -
+          ifelse(results$null_design == "MI", 0, 0.5)
+      ) > 1e-12 |
+      !is.finite(results$x_intercept) |
+      abs(
+        results$x_intercept -
+          ifelse(
+            results$null_design == "MI",
+            -1.815289966638249,
+            -1.902689139395545
+          )
+      ) > 1e-10 |
+      !is.finite(results$mu0) |
+      abs(results$mu0 - 10) > 1e-12 |
+      !is.finite(results$beta_z) |
+      abs(results$beta_z - 0.5) > 1e-12 |
+      results$variance_model != "covariate_dependent_nb" |
+      results$working_family != "negative_binomial" |
+      results$working_dispersion_mode != "fixed" |
+      !is.finite(results$working_nb_size) |
+      abs(results$working_nb_size - 5) > 1e-12 |
+      !is.finite(results$nb_size_intercept) |
+      abs(results$nb_size_intercept - 46) > 1e-12 |
+      !is.finite(results$nb_size_z_slope) |
+      abs(results$nb_size_z_slope + 2.1) > 1e-12)
+)) {
+  stop(
+    "Severe-variance rows must use the canonical continuous-Z exposure and ",
+    "mean models, theta(Z) = 46 exp(-2.1 Z), and a fixed common NB working ",
+    "size of 5."
+  )
 }
 if (any(results$analysis_valid & !is.finite(results$statistic))) {
   warning("Some successful rows have non-finite statistics; see diagnostics.")
@@ -655,12 +740,13 @@ if (any(results$analysis_valid & !is.finite(results$statistic))) {
 
 scenario_variables <- c(
   "method", "n", "null_design", "scenario_id", "nuisance_mode",
-  "z_distribution", "z_probability",
+  "dgp_schema", "implementation_schema",
+  "z_distribution",
   "x_prevalence", "x_intercept", "x_z_slope",
-  "x_probability_z0", "x_probability_z1",
   "mu0", "beta_z", "nb_dispersion", "nb_size",
   "variance_model", "working_family",
-  "variance_factor_z0", "variance_factor_z1",
+  "working_dispersion_mode", "working_nb_size",
+  "nb_size_intercept", "nb_size_z_slope",
   "gamma_signal", "fold_change", "B_resample",
   "alpha", "ground_truth"
 )
@@ -743,12 +829,13 @@ raw_power_summary <- results |>
 
 size_adjustment_keys <- c(
   "method", "n", "null_design", "scenario_id", "nuisance_mode",
-  "z_distribution", "z_probability",
+  "dgp_schema", "implementation_schema",
+  "z_distribution",
   "x_prevalence", "x_intercept", "x_z_slope",
-  "x_probability_z0", "x_probability_z1",
   "mu0", "beta_z", "nb_dispersion", "nb_size",
   "variance_model", "working_family",
-  "variance_factor_z0", "variance_factor_z1",
+  "working_dispersion_mode", "working_nb_size",
+  "nb_size_intercept", "nb_size_z_slope",
   "B_resample", "alpha",
   "nominal_alpha"
 )
@@ -1759,7 +1846,7 @@ if (nrow(failure_plot_data) > 0L) {
 
 diagnostic_labels <- c(
   "statistic" = "Test statistic",
-  "theta_hat" = "Estimated NB theta",
+  "theta_hat" = "Fitted/working NB theta",
   "n_exposed" = "Number exposed",
   "n_exposed_nonzero" = "Exposed with nonzero count",
   "score_eff_n" = "Effective score sample size",

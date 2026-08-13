@@ -6,9 +6,8 @@
 # point is the null (|gamma| = 0), followed by four equally spaced
 # downregulation alternatives.  The first two rows use a correctly specified,
 # high-dispersion NB model with common or rare binary X.  The third row keeps
-# the conditional mean exactly specified but makes the outcome variance vary
-# nonmultiplicatively across a binary Z stratum while fitting a Poisson working
-# score model.
+# the same continuous-Z mean and exposure models, but lets the true NB size
+# vary smoothly with Z while fitting a common-size NB working model.
 ###############################################################################
 
 n <- 400L
@@ -21,12 +20,12 @@ scenario_levels <- c("common_nb", "rare_nb", "severe_variance")
 # Five total points per row: the null and four alternatives.  The endpoints
 # target about 80% size-adjusted rejection for common X, about 40% for rare X,
 # and about 80% in each variance-stress design.  The variance-stress endpoints
-# differ between MI and CI because their binary-stratum exposure information is
-# intentionally different.
+# are calibrated separately under MI and CI because their exposure information
+# differs.
 signal_endpoints <- data.frame(
   null_design = rep(c("MI", "CI"), each = 3L),
   scenario_id = rep(scenario_levels, times = 2L),
-  endpoint = c(0.45, 0.85, 0.105, 0.45, 0.85, 0.18),
+  endpoint = c(0.45, 0.85, 0.22, 0.45, 0.85, 0.27),
   stringsAsFactors = FALSE
 )
 
@@ -68,60 +67,57 @@ make_correct_nb_design <- function(scenario_id, x_prevalence, null_design) {
     null_design = null_design,
     scenario_id = scenario_id,
     z_distribution = "normal",
-    z_probability = NA_real_,
     x_prevalence = x_prevalence,
     x_intercept = x_intercept,
     x_z_slope = x_slope,
-    x_probability_z0 = NA_real_,
-    x_probability_z1 = NA_real_,
     mu0 = 10,
     beta_z = 0.5,
     variance_model = "constant_nb",
     working_family = "negative_binomial",
+    working_dispersion_mode = "estimated",
+    working_nb_size = NA_real_,
     nb_dispersion = 2,
     nb_size = 0.5,
-    variance_factor_z0 = NA_real_,
-    variance_factor_z1 = NA_real_,
+    nb_size_intercept = NA_real_,
+    nb_size_z_slope = NA_real_,
     stringsAsFactors = FALSE
   )
 }
 
-# The severe-variance row adapts the manuscript's constructed
-# nonmultiplicative quasi-Poisson example to a binary exposure.  With
-# P(Z=1)=0.75, both MI and CI have marginal P(X=1)=0.14.  Under CI, the
-# stratum probabilities (0.40, 0.053333...) make Var(X|Z) align with the
-# high-variance outcome stratum, separating the sampling and Barry-permutation
-# information scales without making the robust procedures conservative.
+# The variance-misspecification row uses the same continuous Z and logistic
+# exposure model as the correctly specified rows.  The true NB size
+# theta(Z) = 46 exp(-2.1 Z) decreases smoothly with Z, whereas inference uses
+# the common working size theta_w = 5.  Under CI, both exposure prevalence and
+# true overdispersion increase with Z.  This alignment separates the sampling
+# and information-permutation scales; empirical studentization estimates the
+# two scales separately.  The working size is close to the pseudo-true common
+# NB size (about 5 under the null), rather than an arbitrary misspecification.
 make_severe_variance_design <- function(null_design) {
-  z_probability <- 0.75
-  x_probability_z0 <- if (null_design == "MI") 0.14 else 0.40
-  x_probability_z1 <- if (null_design == "MI") {
-    0.14
+  x_prevalence <- 0.14
+  x_slope <- if (null_design == "MI") 0 else ci_x_z_slope
+  x_intercept <- if (null_design == "MI") {
+    stats::qlogis(x_prevalence)
   } else {
-    (0.14 - (1 - z_probability) * x_probability_z0) / z_probability
+    calibrate_logistic_intercept(x_prevalence, x_slope)
   }
-  x_prevalence <-
-    (1 - z_probability) * x_probability_z0 +
-    z_probability * x_probability_z1
 
   data.frame(
     null_design = null_design,
     scenario_id = "severe_variance",
-    z_distribution = "binary",
-    z_probability = z_probability,
+    z_distribution = "normal",
     x_prevalence = x_prevalence,
-    x_intercept = NA_real_,
-    x_z_slope = NA_real_,
-    x_probability_z0 = x_probability_z0,
-    x_probability_z1 = x_probability_z1,
-    mu0 = 20,
-    beta_z = log(1.5),
-    variance_model = "stratum_quasi_poisson",
-    working_family = "poisson",
+    x_intercept = x_intercept,
+    x_z_slope = x_slope,
+    mu0 = 10,
+    beta_z = 0.5,
+    variance_model = "covariate_dependent_nb",
+    working_family = "negative_binomial",
+    working_dispersion_mode = "fixed",
+    working_nb_size = 5,
     nb_dispersion = NA_real_,
     nb_size = NA_real_,
-    variance_factor_z0 = 5,
-    variance_factor_z1 = 1,
+    nb_size_intercept = 46,
+    nb_size_z_slope = -2.1,
     stringsAsFactors = FALSE
   )
 }
@@ -157,6 +153,7 @@ parameter_grid <- do.call(
 )
 
 parameter_grid$nuisance_mode <- "fitted"
+parameter_grid$dgp_schema <- "continuous_nb_dispersion"
 parameter_grid$fold_change <- exp(parameter_grid$gamma_signal)
 parameter_grid$n <- n
 parameter_grid$B_resample <- B_resample
@@ -176,18 +173,20 @@ parameter_grid$grid_id <- seq_len(nrow(parameter_grid))
 
 parameter_grid <- parameter_grid[, c(
   "grid_id", "n", "null_design", "scenario_id", "nuisance_mode",
-  "z_distribution", "z_probability",
+  "dgp_schema",
+  "z_distribution",
   "x_prevalence", "x_intercept", "x_z_slope",
-  "x_probability_z0", "x_probability_z1",
   "mu0", "beta_z", "variance_model", "working_family",
+  "working_dispersion_mode", "working_nb_size",
   "nb_dispersion", "nb_size",
-  "variance_factor_z0", "variance_factor_z1",
+  "nb_size_intercept", "nb_size_z_slope",
   "gamma_signal", "fold_change", "B_resample", "alpha", "ground_truth"
 )]
 
 expected_rows <- 2L * length(scenario_levels) * 5L
 if (nrow(parameter_grid) != expected_rows ||
-    any(parameter_grid$nuisance_mode != "fitted")) {
+    any(parameter_grid$nuisance_mode != "fitted") ||
+    any(parameter_grid$dgp_schema != "continuous_nb_dispersion")) {
   stop("Unexpected parameter-grid size or nuisance mode")
 }
 factor_columns <- c("null_design", "scenario_id", "gamma_signal")
@@ -208,6 +207,8 @@ if (any(!is.finite(parameter_grid$nb_dispersion[correct_nb_rows])) ||
         parameter_grid$nb_dispersion[correct_nb_rows] - 1
     )) > 1e-12 ||
     any(parameter_grid$working_family[correct_nb_rows] != "negative_binomial") ||
+    any(parameter_grid$working_dispersion_mode[correct_nb_rows] != "estimated") ||
+    any(!is.na(parameter_grid$working_nb_size[correct_nb_rows])) ||
     any(parameter_grid$variance_model[correct_nb_rows] != "constant_nb")) {
   stop("Correct-NB scenario parameters are inconsistent")
 }
@@ -229,22 +230,28 @@ severe_rows <- parameter_grid$scenario_id == "severe_variance"
 severe_designs <- unique(parameter_grid[
   severe_rows,
   c(
-    "null_design", "z_probability", "x_prevalence",
-    "x_probability_z0", "x_probability_z1", "working_family",
-    "variance_model", "variance_factor_z0", "variance_factor_z1"
+    "null_design", "z_distribution", "x_prevalence", "x_intercept",
+    "x_z_slope", "mu0", "beta_z", "working_family",
+    "working_dispersion_mode", "working_nb_size", "variance_model",
+    "nb_size_intercept", "nb_size_z_slope"
   )
 ])
-severe_prevalence <- with(
-  severe_designs,
-  (1 - z_probability) * x_probability_z0 +
-    z_probability * x_probability_z1
+severe_prevalence <- mapply(
+  marginal_logistic_probability,
+  intercept = severe_designs$x_intercept,
+  z_slope = severe_designs$x_z_slope
 )
 if (max(abs(severe_prevalence - severe_designs$x_prevalence)) > 1e-12 ||
     any(abs(severe_designs$x_prevalence - 0.14) > 1e-12) ||
-    any(severe_designs$working_family != "poisson") ||
-    any(severe_designs$variance_model != "stratum_quasi_poisson") ||
-    any(severe_designs$variance_factor_z0 != 5) ||
-    any(severe_designs$variance_factor_z1 != 1)) {
+    any(severe_designs$z_distribution != "normal") ||
+    any(abs(severe_designs$mu0 - 10) > 1e-12) ||
+    any(abs(severe_designs$beta_z - 0.5) > 1e-12) ||
+    any(severe_designs$working_family != "negative_binomial") ||
+    any(severe_designs$working_dispersion_mode != "fixed") ||
+    any(abs(severe_designs$working_nb_size - 5) > 1e-12) ||
+    any(severe_designs$variance_model != "covariate_dependent_nb") ||
+    any(abs(severe_designs$nb_size_intercept - 46) > 1e-12) ||
+    any(abs(severe_designs$nb_size_z_slope + 2.1) > 1e-12)) {
   stop("Severe-variance scenario parameters are inconsistent")
 }
 
@@ -284,7 +291,8 @@ if (sys.nframe() == 0L) {
   )
   print(unique(parameter_grid[, c(
     "null_design", "scenario_id", "z_distribution", "x_prevalence",
-    "working_family", "variance_model", "nb_dispersion", "nb_size",
-    "variance_factor_z0", "variance_factor_z1"
+    "working_family", "working_dispersion_mode", "working_nb_size",
+    "variance_model", "nb_dispersion", "nb_size",
+    "nb_size_intercept", "nb_size_z_slope"
   )]))
 }

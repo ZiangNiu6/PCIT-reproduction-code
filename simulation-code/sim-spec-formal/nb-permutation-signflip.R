@@ -9,9 +9,9 @@
 #   1. common X: Z ~ N(0,1), Pr(X=1)=0.50, correctly specified NB with
 #      dispersion 2 (theta 0.5);
 #   2. rare X: the same model with Pr(X=1)=0.025;
-#   3. severe variance misspecification: Z ~ Bernoulli(0.75), marginal
-#      Pr(X=1)=0.14, means 20 and 30 in the two strata, true variance factors
-#      Var(Y|Z=z)/E(Y|Z=z) = 5 and 1, and a Poisson working score model.
+#   3. variance misspecification: Z ~ N(0,1), marginal Pr(X=1)=0.14,
+#      theta(Z) = 46 exp(-2.1 Z), and a common-size NB working score with
+#      theta_w = 5.  The conditional mean remains correctly specified.
 # Under MI, X is independent of Z. Under CI, X depends on Z while X and Y are
 # generated independently conditional on Z at gamma = 0.
 #
@@ -42,12 +42,12 @@ expected_signal_magnitudes <- list(
   MI = list(
     common_nb = seq(0, 0.45, length.out = 5L),
     rare_nb = seq(0, 0.85, length.out = 5L),
-    severe_variance = seq(0, 0.105, length.out = 5L)
+    severe_variance = seq(0, 0.22, length.out = 5L)
   ),
   CI = list(
     common_nb = seq(0, 0.45, length.out = 5L),
     rare_nb = seq(0, 0.85, length.out = 5L),
-    severe_variance = seq(0, 0.18, length.out = 5L)
+    severe_variance = seq(0, 0.27, length.out = 5L)
   )
 )
 if (nrow(parameter_grid) != 30L ||
@@ -97,7 +97,9 @@ local({
     paste0(prefix, ": ", conditionMessage(error))
   }
 
-  .fit_null_model <- function(Y, Z, nuisance_mode, working_family) {
+  .fit_null_model <- function(
+      Y, Z, nuisance_mode, working_family,
+      working_dispersion_mode, working_nb_size) {
     if (!identical(nuisance_mode, "fitted")) {
       return(list(
         success = FALSE,
@@ -107,26 +109,56 @@ local({
       ))
     }
 
+    if (!identical(working_family, "negative_binomial")) {
+      return(list(
+        success = FALSE,
+        failure_reason = paste0("unknown working_family: ", working_family),
+        mu_hat = rep(NA_real_, length(Y)),
+        theta_hat = NA_real_
+      ))
+    }
+    if (!working_dispersion_mode %in% c("estimated", "fixed")) {
+      return(list(
+        success = FALSE,
+        failure_reason = paste0(
+          "unknown working_dispersion_mode: ", working_dispersion_mode
+        ),
+        mu_hat = rep(NA_real_, length(Y)),
+        theta_hat = NA_real_
+      ))
+    }
+    if (identical(working_dispersion_mode, "fixed") &&
+        (length(working_nb_size) != 1L || !is.finite(working_nb_size) ||
+          working_nb_size <= 0)) {
+      return(list(
+        success = FALSE,
+        failure_reason = "fixed working NB size must be finite and positive",
+        mu_hat = rep(NA_real_, length(Y)),
+        theta_hat = NA_real_
+      ))
+    }
+
     fit <- tryCatch({
-      if (identical(working_family, "negative_binomial")) {
+      if (identical(working_dispersion_mode, "estimated")) {
         suppressWarnings(
           MASS::glm.nb(
             Y ~ Z,
             control = stats::glm.control(maxit = 100L)
           )
         )
-      } else if (identical(working_family, "poisson")) {
+      } else {
         design <- cbind(`(Intercept)` = 1, Z = Z)
         suppressWarnings(
           stats::glm.fit(
             x = design,
             y = Y,
-            family = stats::poisson(link = "log"),
+            family = MASS::negative.binomial(
+              theta = working_nb_size,
+              link = "log"
+            ),
             control = stats::glm.control(maxit = 100L)
           )
         )
-      } else {
-        stop("unknown working_family: ", working_family)
       }
     }, error = function(e) e)
 
@@ -140,12 +172,12 @@ local({
     }
 
     mu_hat <- as.numeric(stats::fitted(fit))
-    theta_hat <- if (identical(working_family, "negative_binomial")) {
+    theta_hat <- if (identical(working_dispersion_mode, "estimated")) {
       as.numeric(fit$theta)
     } else {
-      NA_real_
+      as.numeric(working_nb_size)
     }
-    if (identical(working_family, "negative_binomial") &&
+    if (identical(working_dispersion_mode, "estimated") &&
         !is.null(fit$th.warn)) {
       return(list(
         success = FALSE,
@@ -161,10 +193,7 @@ local({
     fit_valid <- isTRUE(fit$converged) &&
       length(mu_hat) == length(Y) &&
       all(is.finite(mu_hat)) && all(mu_hat > 0) &&
-      (
-        identical(working_family, "poisson") ||
-          (length(theta_hat) == 1L && is.finite(theta_hat) && theta_hat > 0)
-      )
+      length(theta_hat) == 1L && is.finite(theta_hat) && theta_hat > 0
 
     if (!fit_valid) {
       return(list(
@@ -188,13 +217,10 @@ local({
     n <- length(Y)
     D <- cbind(`(Intercept)` = 1, Z = Z)
 
-    H <- if (identical(working_family, "negative_binomial")) {
-      1 / (1 + mu_hat / theta_hat)
-    } else if (identical(working_family, "poisson")) {
-      rep(1, n)
-    } else {
+    if (!identical(working_family, "negative_binomial")) {
       stop("unknown working_family: ", working_family)
     }
+    H <- 1 / (1 + mu_hat / theta_hat)
     W <- mu_hat * H
     if (any(!is.finite(H)) || any(!is.finite(W)) || any(W <= 0)) {
       stop("invalid NB score weights")
@@ -261,63 +287,42 @@ local({
   }
 
   generate_data <- function(
-      n, null_design, scenario_id, nuisance_mode,
-      z_distribution, z_probability,
+      n, null_design, scenario_id, nuisance_mode, dgp_schema,
+      z_distribution,
       x_prevalence, x_intercept, x_z_slope,
-      x_probability_z0, x_probability_z1,
       mu0, beta_z, variance_model, working_family,
-      nb_size, variance_factor_z0, variance_factor_z1,
+      working_dispersion_mode, working_nb_size,
+      nb_size, nb_size_intercept, nb_size_z_slope,
       gamma_signal, B_resample) {
     if (!null_design %in% c("MI", "CI")) {
       stop("null_design must be MI or CI")
     }
+    if (!identical(dgp_schema, "continuous_nb_dispersion")) {
+      stop("unexpected DGP schema: ", dgp_schema)
+    }
 
-    Z <- if (identical(z_distribution, "normal")) {
-      stats::rnorm(n)
-    } else if (identical(z_distribution, "binary")) {
-      stats::rbinom(n, size = 1L, prob = z_probability)
-    } else {
+    if (!identical(z_distribution, "normal")) {
       stop("unknown z_distribution: ", z_distribution)
     }
-    propensity <- if (identical(z_distribution, "normal")) {
-      stats::plogis(x_intercept + x_z_slope * Z)
-    } else {
-      ifelse(Z == 0L, x_probability_z0, x_probability_z1)
-    }
+    Z <- stats::rnorm(n)
+    propensity <- stats::plogis(x_intercept + x_z_slope * Z)
     X <- stats::rbinom(n, size = 1L, prob = propensity)
 
     mu_null <- mu0 * exp(beta_z * Z)
     mu_true <- mu_null * exp(gamma_signal * X)
     Y <- if (identical(variance_model, "constant_nb")) {
       as.integer(MASS::rnegbin(n = n, mu = mu_true, theta = nb_size))
-    } else if (identical(variance_model, "stratum_quasi_poisson")) {
-      variance_factor <- ifelse(
-        Z == 0L,
-        variance_factor_z0,
-        variance_factor_z1
-      )
-      poisson <- abs(variance_factor - 1) <= 1e-12
-      output <- integer(n)
-      if (any(poisson)) {
-        output[poisson] <- stats::rpois(
-          sum(poisson), lambda = mu_true[poisson]
-        )
+    } else if (identical(variance_model, "covariate_dependent_nb")) {
+      observation_size <- nb_size_intercept * exp(nb_size_z_slope * Z)
+      if (any(!is.finite(observation_size)) || any(observation_size <= 0)) {
+        stop("covariate-dependent NB sizes must be finite and positive")
       }
-      if (any(!poisson)) {
-        if (any(variance_factor[!poisson] <= 1)) {
-          stop("non-Poisson variance factors must exceed one")
-        }
-        observation_size <-
-          mu_true[!poisson] / (variance_factor[!poisson] - 1)
-        output[!poisson] <- stats::rnbinom(
-          sum(!poisson),
-          mu = mu_true[!poisson],
-          size = observation_size
-        )
-      }
-      output
+      as.integer(stats::rnbinom(n, mu = mu_true, size = observation_size))
     } else {
       stop("unknown variance_model: ", variance_model)
+    }
+    if (length(Y) != n || anyNA(Y) || any(Y < 0L)) {
+      stop("outcome generator returned invalid counts")
     }
 
     # The simulator controls the data seed.  Storing method-specific seeds makes
@@ -330,7 +335,9 @@ local({
       Y = Y,
       Z = Z,
       nuisance_mode = nuisance_mode,
-      working_family = working_family
+      working_family = working_family,
+      working_dispersion_mode = working_dispersion_mode,
+      working_nb_size = working_nb_size
     )
 
     score_cache <- NULL
@@ -363,7 +370,10 @@ local({
       null_design = null_design,
       scenario_id = scenario_id,
       nuisance_mode = nuisance_mode,
+      dgp_schema = dgp_schema,
       working_family = working_family,
+      working_dispersion_mode = working_dispersion_mode,
+      working_nb_size = working_nb_size,
       x_prevalence = x_prevalence,
       propensity = propensity,
       mu_true = mu_true,
@@ -385,6 +395,7 @@ local({
       failure_reason = NA_character_, degenerate = FALSE) {
     cache <- data$score_cache
     list(
+      implementation_schema = as.character(data$dgp_schema),
       p.value = as.numeric(p_value),
       statistic = as.numeric(statistic),
       success = as.logical(success),

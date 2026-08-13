@@ -73,6 +73,18 @@ The complete simulation workflow requires Nextflow and pins the
 `dd2f1fcdb533a7764f05dd9dd05b175b02b264a8`. It uses Nextflow's `standard`
 profile by default; set `PCIT_NEXTFLOW_PROFILE=local` for an interactive run.
 
+The Section 5.1 negative-binomial study writes to
+`simulation-results/nb-permutation-signflip-continuous-dispersion`. In its
+variance-misspecification scenario, `Z` remains standard normal and the true
+NB size is `theta(Z) = 46 exp(-2.1 Z)`, while the score test uses the fixed
+common working size `theta = 5`. The plotter strictly checks this contract and
+requires matching `continuous_nb_dispersion` schema markers from both the grid
+and each method output, so copied legacy results also fail validation. It does
+not read the former `nb-permutation-signflip` result directory. Output PDF
+filenames are unchanged so the manuscript includes remain stable. The five
+signal magnitudes for this row are `0, 0.055, 0.11, 0.165, 0.22` under MI and
+`0, 0.0675, 0.135, 0.2025, 0.27` under CI.
+
 The Section 5.2 continuous-regression study writes to the isolated
 `simulation-results/pcm-additive-matched` namespace. Within each GCM or PCM
 pair, the normal and permutation p-values are computed from the same observed
