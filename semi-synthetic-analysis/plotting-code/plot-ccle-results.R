@@ -3,12 +3,15 @@
 # Plot CCLE Synthetic-Y 30-targets x s in {5,10} sweep (60 setups).
 #
 # Reads only the matched-calibration v2 combined result under
-# $LOCAL_PDRT_DATA_DIR/ccle and writes a labelled p-value quantile diagnostic,
-# standalone CHIC2 calibration preview, and combined Type-I figure directly to
-# project-progress/combine/figures-and-tables. Test type is encoded by colour;
-# calibration is encoded by line or border type. Pass --intro-only to
-# regenerate only the standalone CHIC2 calibration preview used as Figure 1,
-# or --validate-only to check the combined artifact without writing figures.
+# $LOCAL_PDRT_DATA_DIR/ccle and writes GCM-focused versions of the labelled
+# p-value quantile diagnostic, standalone CHIC2 calibration preview, and
+# combined Type-I figure directly to project-progress/combine/figures-and-tables.
+# The plotted procedures are permutation GCM, asymptotic GCM, and Pearson;
+# stored PCM results remain part of the strict input validation but are not
+# displayed. Test type is encoded by colour and calibration by line or border
+# type. Pass --intro-only to regenerate only the standalone CHIC2 calibration
+# preview used as Figure 1, or --validate-only to check the combined artifact
+# without writing figures.
 ###############################################################################
 
 script_args <- commandArgs(trailingOnly = TRUE)
@@ -402,15 +405,17 @@ if (validate_only) {
 
 dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
 
-# Pair calibration methods within GCM and PCM, then show Pearson as baseline.
-method_levels <- c("perm_gcm", "asym_gcm", "perm_pcm", "asym_pcm", "naive")
+# Focus the CCLE figures on the rare-carrier GCM mechanism. PCM remains in the
+# validated result schema and reproduction archive, but is not displayed here
+# because this null-only benchmark does not cleanly isolate its calibration
+# behavior.
+method_levels <- c("perm_gcm", "asym_gcm", "naive")
 method_labels <- c(
   "asym_gcm" = "GCM (asym)",
   "perm_gcm" = "GCM (adaptive perm)",
-  "asym_pcm" = "PCM (asym)",
-  "perm_pcm" = "PCM (adaptive perm)",
   "naive" = "Pearson"
 )
+stopifnot(all(method_levels %in% storage_methods))
 
 ## Internal tags refer to mutation FREQUENCY tercile; display labels invert that
 ## to X-vector SPARSITY: low-frequency mutations correspond to high-sparsity X.
@@ -431,6 +436,7 @@ rej_long <- bind_rows(lapply(results, function(r) {
              rejection_rate = unname(r$rejection_rate),
              stringsAsFactors = FALSE)
 })) |>
+  filter(method %in% method_levels) |>
   mutate(
     method = factor(method, levels = method_levels),
     method_label = factor(
@@ -444,6 +450,13 @@ rej_long <- bind_rows(lapply(results, function(r) {
     )
   ) |>
   add_calibration_test_aesthetics()
+
+if (nrow(rej_long) != length(results) * length(method_levels) ||
+    anyNA(rej_long$method) ||
+    anyNA(rej_long$method_label)) {
+  stop("The displayed CCLE result must contain exactly three GCM-focused procedures per setup",
+       call. = FALSE)
+}
 
 # ---------------------------------------------------------------------------
 # 2. Pick 3 representative setups (one per tercile) at s = 10.
@@ -476,7 +489,7 @@ pv_long <- bind_rows(lapply(chosen_keys, function(k) {
     pivot_longer(-rep, names_to = "method", values_to = "p_value") |>
     mutate(setup = setup_label(r))
 })) |>
-  filter(!is.na(p_value)) |>
+  filter(method %in% method_levels, !is.na(p_value)) |>
   mutate(
     setup = factor(setup, levels = setup_order),
     method = factor(method, levels = method_levels),
@@ -492,6 +505,13 @@ pv_qq <- pv_long |>
   arrange(p_value, .by_group = TRUE) |>
   mutate(theoretical = ppoints(n())) |>
   ungroup()
+
+if (nrow(pv_qq) != length(chosen_keys) * EXPECTED_R * length(method_levels) ||
+    anyNA(pv_qq$method) ||
+    anyNA(pv_qq$method_label)) {
+  stop("The CCLE diagnostic must contain exactly three displayed procedures per replicate",
+       call. = FALSE)
+}
 
 # ---------------------------------------------------------------------------
 # 3a. Standalone CHIC2 calibration preview for the introduction. This uses
@@ -672,9 +692,9 @@ p_qq <- ggplot(
   scale_calibration_linetype(guide = "none") +
   coord_equal(xlim = c(0, 1), ylim = c(0, 1)) +
   labs(
-    title = "Stopped anytime-value diagnostic",
+    title = "CCLE GCM null-calibration diagnostic",
     subtitle = paste0(
-      "Adaptive permutation values use h = ", EXPECTED_H,
+      "Adaptive GCM permutation values use h = ", EXPECTED_H,
       " and Bmax = ", EXPECTED_B_MAX,
       "; the 45-degree line is descriptive, not a uniform-null reference."
     ),
@@ -692,10 +712,10 @@ qq_path <- file.path(
   output_dir,
   "ccle-typeI-synthY-30targets-pvalqq.pdf"
 )
-ggsave(qq_path, p_qq, width = 14, height = 11)
+ggsave(qq_path, p_qq, width = 12, height = 7.5)
 cat("Saved: ", qq_path, "\n", sep = "")
 cat(
-  "  Adaptive permutation values are stopped anytime-valid values; the ",
+  "  Adaptive GCM permutation values are stopped anytime-valid values; the ",
   "uniform line is descriptive and must not be interpreted as their null ",
   "distribution.\n",
   sep = ""
@@ -729,6 +749,7 @@ rej_chosen <- bind_rows(lapply(chosen_keys, function(k) {
              rejection_rate = unname(r$rejection_rate),
              stringsAsFactors = FALSE)
 })) |>
+  filter(method %in% method_levels) |>
   mutate(
     setup = factor(setup, levels = setup_order),
     method = factor(method, levels = method_levels),
@@ -738,6 +759,13 @@ rej_chosen <- bind_rows(lapply(chosen_keys, function(k) {
     )
   ) |>
   add_calibration_test_aesthetics()
+
+if (nrow(rej_chosen) != length(chosen_keys) * length(method_levels) ||
+    anyNA(rej_chosen$method) ||
+    anyNA(rej_chosen$method_label)) {
+  stop("Representative CCLE panels must contain exactly three displayed procedures per setup",
+       call. = FALSE)
+}
 
 # ---------------------------------------------------------------------------
 # 6. Combined two-row figure: box (60 setups) on top, bars (3 setups) below.
@@ -807,8 +835,10 @@ p_bar_c <- ggplot(
   facet_wrap(~ setup, nrow = 1) +
   scale_test_fill() +
   scale_calibration_linetype() +
-  scale_y_continuous(limits = c(0, 1),
-                     breaks = seq(0, 1, by = 0.2),
+  scale_y_continuous(limits = c(0, min(
+                       1, 1.15 * max(rej_chosen$rejection_rate)
+                     )),
+                     breaks = scales::breaks_pretty(n = 5),
                      expand = expansion(mult = c(0, 0.02))) +
   labs(y = expression("Rejection rate at " * alpha * " = 0.05")) +
   guides(
@@ -881,7 +911,7 @@ cat("Saved: ", combined_path, "\n", sep = "")
 cat("\n=== Setups per sparsity facet (one row per method) ===\n")
 print(n_setups_per_facet)
 
-cat("\n=== Mean / median Type-I rate by method x sparsity (across setups) ===\n")
+cat("\n=== GCM-focused mean / median Type-I rate by method x sparsity ===\n")
 rej_long |>
   group_by(sparsity_tag, method_label) |>
   summarise(mean   = mean(rejection_rate),
@@ -891,12 +921,13 @@ rej_long |>
             .groups = "drop") |>
   print(n = Inf)
 
-cat("\n=== Three chosen setups for stopped anytime-value diagnostic ===\n")
+cat("\n=== Three chosen GCM-focused setups for the diagnostic ===\n")
 for (k in chosen_keys) {
   r <- results[[k]]
   cat(sprintf("  %-18s  tag=%-15s  freq=%.4f  s=%2d\n",
               r$target, r$sparsity_tag, r$freq, r$s))
-  cat("    rejection rates: ",
-      paste(sprintf("%s=%.3f", names(r$rejection_rate), r$rejection_rate),
+  displayed_rates <- r$rejection_rate[method_levels]
+  cat("    displayed rejection rates: ",
+      paste(sprintf("%s=%.3f", names(displayed_rates), displayed_rates),
             collapse = "  "), "\n", sep = "")
 }
