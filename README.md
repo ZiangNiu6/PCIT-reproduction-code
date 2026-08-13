@@ -72,6 +72,15 @@ The complete simulation workflow requires Nextflow and pins the
 `katsevich-lab/simulatr-pipeline` workflow to commit
 `dd2f1fcdb533a7764f05dd9dd05b175b02b264a8`. It uses Nextflow's `standard`
 profile by default; set `PCIT_NEXTFLOW_PROFILE=local` for an interactive run.
+
+The Section 5.2 continuous-regression study writes to the isolated
+`simulation-results/pcm-additive-matched` namespace. Within each GCM or PCM
+pair, the normal and permutation p-values are computed from the same observed
+statistic, random-forest fits, and (for PCM) sample split. The full runner first
+executes `simulation-code/smoke-test-pcm-additive-matched.R`; the plotter then
+requires all 27,000 matched outputs before it can replace the manuscript
+figure. Legacy `pcm-additive` results are never accepted by this plotter.
+
 The complete CCLE workflow runs locally by default. It first runs a small,
 data-independent matched-calibration smoke test, then runs all 60 setups,
 strictly combines them, and regenerates the figures. The domain-level

@@ -43,16 +43,32 @@ project_root <- normalizePath(file.path(script_directory, "..", "..", ".."))
 reproduction_root <- file.path(project_root, "reproduction-code")
 source(file.path(reproduction_root, "plotting-style.R"))
 
+cli_arguments <- commandArgs(trailingOnly = TRUE)
+supported_arguments <- "--validate-only"
+unknown_arguments <- setdiff(cli_arguments, supported_arguments)
+if (length(unknown_arguments) > 0L) {
+  stop(
+    "Unknown argument(s): ", paste(unknown_arguments, collapse = ", "),
+    ". Supported argument: --validate-only"
+  )
+}
+validate_only <- "--validate-only" %in% cli_arguments
+
 manuscript_directory <- file.path(
   project_root,
   "project-progress",
   "combine",
   "figures-and-tables"
 )
-dir.create(manuscript_directory, recursive = TRUE, showWarnings = FALSE)
 
 ############################# Preprocess the data ##############################
 sim_name <- "pcm-additive"
+result_namespace <- "pcm-additive-matched"
+result_schema <- "pcm_additive_matched"
+combined_method <- "matched_gcm_pcm_rf"
+display_methods <- c(
+  "perm_gcm_rf", "asym_gcm_rf", "perm_pcm_rf", "asym_pcm_rf"
+)
 results_root <- Sys.getenv("LOCAL_PDRT_DATA_DIR", unset = "")
 if (!nzchar(results_root)) {
   results_root <- file.path(project_root, "results")
@@ -62,10 +78,17 @@ if (!nzchar(results_root)) {
 results_dir <- file.path(
   results_root,
   "simulation-results",
-  sim_name,
+  result_namespace,
   paste0(sim_name, "_results.rds")
 )
 
+if (!file.exists(results_dir)) {
+  stop(
+    "Matched pcm-additive result not found at ", results_dir, ". ",
+    "Run `bash run_all_simulation.sh full`; the legacy pcm-additive result ",
+    "is intentionally not accepted."
+  )
+}
 results_raw <- readRDS(results_dir)
 
 grid_file <- file.path(
@@ -83,49 +106,364 @@ current_grid_ok <-
     current_parameter_grid[c("n", "dgp", "gamma_signal")]
   ) &&
   setequal(current_parameter_grid$dgp, expected_dgps)
-if (!current_grid_ok) {
+if (!current_grid_ok ||
+    !all(c("grid_id", "B_perm", "alpha") %in% names(current_parameter_grid)) ||
+    any(current_parameter_grid$B_perm != 499L) ||
+    any(current_parameter_grid$alpha != 0.05)) {
   stop(
     "pcm-additive parameter grid is stale or incompatible; rerun ",
     "reproduction-code/simulation-code/sim-spec-formal/pcm-additive-grid.R"
   )
 }
-expected_methods <- c(
-  "perm_gcm_rf", "perm_pcm_rf", "asym_gcm_rf", "asym_pcm_rf"
-)
+
 if (!is.list(results_raw) || !is.data.frame(results_raw$results) ||
-    !all(c("grid_id", "method", "output") %in% names(results_raw$results)) ||
-    !setequal(as.character(unique(results_raw$results$method)), expected_methods)) {
-  stop("The saved pcm-additive result has an incompatible structure.")
+    !all(c("grid_id", "run_id", "method", "output") %in%
+         names(results_raw$results))) {
+  stop("The saved matched pcm-additive result has an incompatible structure.")
 }
 
-result_grid_ids <- sort(unique(results_raw$results$grid_id))
-result_counts <- results_raw$results |>
-  dplyr::count(.data$grid_id, .data$method, name = "n_replications")
-expected_pair_count <- length(result_grid_ids) * length(expected_methods)
-if (nrow(result_counts) != expected_pair_count ||
-    any(result_counts$n_replications != 1000L)) {
+results_table <- results_raw$results
+if (!is.list(results_table$output) || any(vapply(
+  results_table$output, is.null, logical(1)
+))) {
+  stop("Every matched pcm-additive row must contain a non-null output list.")
+}
+if (!is.numeric(results_table$grid_id) || !is.numeric(results_table$run_id) ||
+    anyNA(results_table$grid_id) || anyNA(results_table$run_id) ||
+    any(!is.finite(results_table$grid_id)) ||
+    any(!is.finite(results_table$run_id)) ||
+    any(results_table$grid_id != as.integer(results_table$grid_id)) ||
+    any(results_table$run_id != as.integer(results_table$run_id))) {
+  stop("grid_id and run_id must be finite, non-missing integers.")
+}
+results_table$grid_id <- as.integer(results_table$grid_id)
+results_table$run_id <- as.integer(results_table$run_id)
+results_table$method <- as.character(results_table$method)
+
+if (!identical(unique(results_table$method), combined_method)) {
   stop(
-    "The pcm-additive result must contain exactly 1,000 replications for ",
-    "every grid-by-method combination."
+    "The matched pcm-additive result must contain only method `",
+    combined_method, "`."
   )
 }
-if (setequal(result_grid_ids, current_parameter_grid$grid_id)) {
-  parameter_grid <- current_parameter_grid
-} else {
+
+expected_grid_ids <- sort(as.integer(current_parameter_grid$grid_id))
+result_grid_ids <- sort(unique(results_table$grid_id))
+if (!identical(result_grid_ids, expected_grid_ids)) {
   stop(
-    "The saved pcm-additive results do not match the redesigned 27-cell ",
-    "three-row simulation. Archive the legacy result file and rerun the ",
-    "simulation before plotting."
+    "The matched pcm-additive results do not match the current 27-cell grid."
   )
 }
 
-if (!setequal(unique(results_raw$results$grid_id), parameter_grid$grid_id)) {
-  stop("The selected pcm-additive result cells do not match the plotting grid.")
+expected_replications <- 1000L
+expected_rows <- length(expected_grid_ids) * expected_replications
+if (nrow(results_table) != expected_rows) {
+  stop(
+    "The matched pcm-additive result must contain exactly ", expected_rows,
+    " rows (27 grid cells x 1,000 replications); found ",
+    nrow(results_table), "."
+  )
 }
 
-# join results with parameter grid
-full_results <- results_raw$results |>
+result_keys <- paste(results_table$grid_id, results_table$run_id, sep = ":")
+if (anyDuplicated(result_keys)) {
+  duplicate_index <- which(duplicated(result_keys))[1L]
+  stop(
+    "Duplicate matched pcm-additive grid/run key: ",
+    result_keys[[duplicate_index]], "."
+  )
+}
+expected_run_ids <- seq_len(expected_replications)
+run_ids_by_grid <- split(results_table$run_id, results_table$grid_id)
+complete_run_ids <- vapply(
+  run_ids_by_grid,
+  function(run_ids) identical(sort(run_ids), expected_run_ids),
+  logical(1)
+)
+if (length(complete_run_ids) != length(expected_grid_ids) ||
+    !all(complete_run_ids)) {
+  bad_grid <- names(complete_run_ids)[which(!complete_run_ids)[1L]]
+  stop(
+    "Every grid cell must contain run_id 1:1000 exactly once; first ",
+    "incomplete grid_id: ", bad_grid, "."
+  )
+}
+
+parameter_grid <- current_parameter_grid
+
+stop_bad_output <- function(row_index, message) {
+  stop(
+    "Invalid matched output at grid_id=", results_table$grid_id[[row_index]],
+    ", run_id=", results_table$run_id[[row_index]], ": ", message,
+    call. = FALSE
+  )
+}
+
+is_whole_number <- function(value) {
+  is.numeric(value) && length(value) == 1L && !is.na(value) &&
+    is.finite(value) && value == as.integer(value)
+}
+
+p_value_matrix <- matrix(
+  NA_real_,
+  nrow = nrow(results_table),
+  ncol = length(display_methods),
+  dimnames = list(NULL, display_methods)
+)
+statistic_matrix <- matrix(
+  NA_real_,
+  nrow = nrow(results_table),
+  ncol = 2L,
+  dimnames = list(NULL, c("gcm", "pcm"))
+)
+reference_configuration <- NULL
+n_by_grid <- stats::setNames(parameter_grid$n, parameter_grid$grid_id)
+
+for (row_index in seq_len(nrow(results_table))) {
+  output <- results_table$output[[row_index]]
+  if (!is.list(output)) {
+    stop_bad_output(row_index, "output is not a list")
+  }
+  if (!identical(output$schema_version, result_schema)) {
+    stop_bad_output(
+      row_index,
+      paste0("schema_version must be `", result_schema, "`")
+    )
+  }
+  if ("error" %in% names(output) &&
+      !is.null(output$error) && length(output$error) > 0L) {
+    stop_bad_output(row_index, "output contains an error")
+  }
+
+  p_values <- output$p_values
+  if (!is.numeric(p_values) ||
+      !identical(names(p_values), display_methods) ||
+      anyNA(p_values) || any(!is.finite(p_values)) ||
+      any(p_values < 0 | p_values > 1)) {
+    stop_bad_output(
+      row_index,
+      paste0(
+        "p_values must be finite probabilities named ",
+        paste(display_methods, collapse = ", ")
+      )
+    )
+  }
+
+  statistics <- output$statistics
+  if (!is.numeric(statistics) ||
+      !identical(names(statistics), c("gcm", "pcm")) ||
+      anyNA(statistics) || any(!is.finite(statistics))) {
+    stop_bad_output(
+      row_index,
+      "statistics must contain finite named values gcm and pcm"
+    )
+  }
+
+  alternatives <- output$alternatives
+  expected_alternatives <- c(gcm = "two.sided", pcm = "greater")
+  if (!is.character(alternatives) ||
+      !identical(alternatives, expected_alternatives)) {
+    stop_bad_output(
+      row_index,
+      "alternatives must be c(gcm='two.sided', pcm='greater')"
+    )
+  }
+
+  matched <- output$matched
+  if (!is.logical(matched) ||
+      !identical(names(matched), c("gcm", "pcm", "all")) ||
+      anyNA(matched) || !all(matched)) {
+    stop_bad_output(row_index, "all matched-statistic flags must be TRUE")
+  }
+  flags <- output$flags
+  expected_flags <- c(
+    "matched_statistics", "explicit_pcm_split",
+    "fixed_rf_randomness", "single_thread_rf"
+  )
+  if (!is.logical(flags) || !identical(names(flags), expected_flags) ||
+      anyNA(flags) || !all(flags)) {
+    stop_bad_output(row_index, "all implementation-integrity flags must be TRUE")
+  }
+
+  expected_asymptotic <- c(
+    asym_gcm_rf = 2 * stats::pnorm(abs(statistics[["gcm"]]),
+                                  lower.tail = FALSE),
+    asym_pcm_rf = stats::pnorm(statistics[["pcm"]], lower.tail = FALSE)
+  )
+  observed_asymptotic <- p_values[names(expected_asymptotic)]
+  if (!isTRUE(all.equal(
+    unname(observed_asymptotic),
+    unname(expected_asymptotic),
+    tolerance = 1e-12,
+    check.attributes = FALSE
+  ))) {
+    stop_bad_output(
+      row_index,
+      "asymptotic p-values do not reconstruct from the stored statistics"
+    )
+  }
+
+  configuration <- output$configuration
+  configuration_fields <- c(
+    "B_max", "h", "alpha", "rf_num_trees", "rf_num_threads", "n_cores"
+  )
+  if (!is.list(configuration) ||
+      !all(configuration_fields %in% names(configuration))) {
+    stop_bad_output(row_index, "configuration is missing required fields")
+  }
+  configuration_values <- vapply(
+    configuration_fields,
+    function(field) {
+      value <- configuration[[field]]
+      if (!is.numeric(value) || length(value) != 1L ||
+          is.na(value) || !is.finite(value)) {
+        stop_bad_output(
+          row_index,
+          paste0("configuration$", field, " must be a finite scalar")
+        )
+      }
+      as.numeric(value)
+    },
+    numeric(1)
+  )
+  if (configuration_values[["B_max"]] != 499 ||
+      configuration_values[["h"]] != 15 ||
+      configuration_values[["alpha"]] != 0.05 ||
+      any(configuration_values[c(
+        "rf_num_trees", "rf_num_threads", "n_cores"
+      )] <= 0)) {
+    stop_bad_output(row_index, "configuration is not the canonical study")
+  }
+  if (is.null(reference_configuration)) {
+    reference_configuration <- configuration_values
+  } else if (!identical(configuration_values, reference_configuration)) {
+    stop_bad_output(row_index, "configuration changes across replications")
+  }
+
+  seeds <- output$seeds
+  if (!is.numeric(seeds) || length(seeds) == 0L || is.null(names(seeds)) ||
+      any(!nzchar(names(seeds))) || anyDuplicated(names(seeds)) ||
+      anyNA(seeds) || any(!is.finite(seeds)) ||
+      any(seeds != as.integer(seeds))) {
+    stop_bad_output(row_index, "seeds must be finite named integers")
+  }
+
+  pcm_split <- output$pcm_split
+  if (!is.list(pcm_split) ||
+      !all(c("D1_n", "D2_n", "D2_checksum") %in% names(pcm_split)) ||
+      !is_whole_number(pcm_split$D1_n) ||
+      !is_whole_number(pcm_split$D2_n) ||
+      pcm_split$D1_n <= 0 || pcm_split$D2_n <= 0 ||
+      pcm_split$D1_n + pcm_split$D2_n !=
+        n_by_grid[[as.character(results_table$grid_id[[row_index]])]] ||
+      length(pcm_split$D2_checksum) != 1L ||
+      is.na(pcm_split$D2_checksum) ||
+      !nzchar(as.character(pcm_split$D2_checksum))) {
+    stop_bad_output(row_index, "pcm_split is missing or incompatible with n")
+  }
+
+  adaptive <- output$adaptive
+  if (!is.list(adaptive) ||
+      !identical(names(adaptive), c("gcm", "pcm"))) {
+    stop_bad_output(row_index, "adaptive must contain gcm and pcm diagnostics")
+  }
+  for (test_name in c("gcm", "pcm")) {
+    diagnostic <- adaptive[[test_name]]
+    required_diagnostics <- c(
+      "actual_B", "K", "t_star", "stopped_early", "stop_reason"
+    )
+    if (!is.list(diagnostic) ||
+        !all(required_diagnostics %in% names(diagnostic)) ||
+        !is_whole_number(diagnostic$actual_B) ||
+        !is_whole_number(diagnostic$K) ||
+        diagnostic$actual_B < 1L ||
+        diagnostic$actual_B > configuration_values[["B_max"]] ||
+        diagnostic$K < 0L || diagnostic$K > diagnostic$actual_B ||
+        !is.numeric(diagnostic$t_star) ||
+        length(diagnostic$t_star) != 1L || is.na(diagnostic$t_star) ||
+        !is.logical(diagnostic$stopped_early) ||
+        length(diagnostic$stopped_early) != 1L ||
+        is.na(diagnostic$stopped_early) ||
+        !identical(
+          diagnostic$stopped_early,
+          diagnostic$actual_B < configuration_values[["B_max"]]
+        ) ||
+        !is.character(diagnostic$stop_reason) ||
+        length(diagnostic$stop_reason) != 1L ||
+        is.na(diagnostic$stop_reason) || !nzchar(diagnostic$stop_reason)) {
+      stop_bad_output(
+        row_index,
+        paste0("invalid adaptive diagnostics for ", test_name)
+      )
+    }
+
+    if (diagnostic$K < configuration_values[["h"]]) {
+      if (!is.infinite(diagnostic$t_star) || diagnostic$t_star < 0) {
+        stop_bad_output(
+          row_index,
+          paste0(test_name, " t_star must be Inf before the h-th exceedance")
+        )
+      }
+      expected_permutation <- configuration_values[["h"]] /
+        (diagnostic$actual_B + configuration_values[["h"]] - diagnostic$K)
+    } else {
+      if (!is.finite(diagnostic$t_star) || diagnostic$t_star < 1 ||
+          diagnostic$t_star > diagnostic$actual_B) {
+        stop_bad_output(
+          row_index,
+          paste0(test_name, " t_star is incompatible with adaptive stopping")
+        )
+      }
+      expected_permutation <- configuration_values[["h"]] /
+        diagnostic$t_star
+    }
+    permutation_name <- paste0("perm_", test_name, "_rf")
+    if (!isTRUE(all.equal(
+      unname(p_values[[permutation_name]]),
+      unname(expected_permutation),
+      tolerance = 1e-12,
+      check.attributes = FALSE
+    ))) {
+      stop_bad_output(
+        row_index,
+        paste0(
+          permutation_name,
+          " does not reconstruct from the adaptive diagnostics"
+        )
+      )
+    }
+  }
+
+  p_value_matrix[row_index, ] <- p_values[display_methods]
+  statistic_matrix[row_index, ] <- statistics[c("gcm", "pcm")]
+}
+
+########################## Expand matched p-values ############################
+pvals_df <- dplyr::bind_cols(
+  results_table[c("grid_id", "run_id")],
+  as.data.frame(p_value_matrix, check.names = FALSE)
+) |>
+  tidyr::pivot_longer(
+    cols = dplyr::all_of(display_methods),
+    names_to = "method",
+    values_to = "p.value"
+  ) |>
   dplyr::left_join(parameter_grid, by = "grid_id")
+
+if (nrow(pvals_df) != expected_rows * length(display_methods) ||
+    anyNA(pvals_df$p.value) || any(!is.finite(pvals_df$p.value))) {
+  stop("Expansion of the matched p-values failed its integrity check.")
+}
+
+if (validate_only) {
+  cat(
+    "Validated matched pcm-additive result: ", expected_rows,
+    " complete grid/run outputs and ", nrow(pvals_df),
+    " finite displayed p-values.\n",
+    sep = ""
+  )
+  quit(save = "no", status = 0L)
+}
 
 alpha <- 0.05
 
@@ -144,11 +482,6 @@ add_wilson_bounds <- function(data, confidence = 0.95) {
   data$reject_upper <- pmin(1, center + half_width)
   data
 }
-
-########################## Extract raw p-values ################################
-pvals_df <- full_results |>
-  dplyr::mutate(method = as.character(method)) |>
-  tidyr::unnest_wider(output)
 
 ########################## Compute standard rejection rates ####################
 summary_df <- pvals_df |>
@@ -502,6 +835,7 @@ joint_plot <- patchwork::wrap_plots(
 )
 
 ########################## Save and synchronize ###############################
+dir.create(manuscript_directory, recursive = TRUE, showWarnings = FALSE)
 output_path <- file.path(manuscript_directory, "pcm_additive.pdf")
 ggsave(
   output_path,
