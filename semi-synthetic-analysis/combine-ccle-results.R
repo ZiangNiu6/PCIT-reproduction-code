@@ -1,33 +1,60 @@
 #!/usr/bin/env Rscript
 ###############################################################################
-# Merge matched-calibration v2 results from ccle-typeI-synthY-30targets.R (one
-# job per (target, s) pair) into a single versioned combined file.
+# Merge the paired matched-calibration v4 effect grid from
+# ccle-typeI-synthY-30targets.R (one job per target/effect setting) into a
+# single versioned combined file.
 #
 # Inputs and outputs live in $LOCAL_PDRT_DATA_DIR/ccle:
-#   ccle-typeI-synthY-30targets-matched-v2-results-{TARGET}-s{S}.rds
-#   ccle-typeI-synthY-30targets-matched-v2-results.rds
-#   ccle-typeI-synthY-30targets-matched-v2-rejection-rates.csv
+#   ccle-typeI-synthY-30targets-matched-v4-results-{TARGET}-{EFFECT_ID}-s10.rds
+#   ccle-typeI-synthY-30targets-matched-v4-results.rds
+#   ccle-typeI-synthY-30targets-matched-v4-rejection-rates.csv
 #
-# To know which setups are expected, this script re-derives the 60-element
-# grid the same way the runner does: it samples 10 targets from each frequency
-# tercile of the screened mutations using SAMPLE_SEED = 2026.
+# To know which setups are expected, this script re-derives the same 30
+# deterministic targets as the runner: it samples 10 targets from each
+# frequency tercile of the screened mutations using SAMPLE_SEED = 2026. Each
+# target has five paired effects (0, 0.5, 1, 1.5, 2) at s = 10. The setup IDs
+# are effect-major: all 30 delta0 jobs, then all 30 delta0p5 jobs, and so on.
 #
 # Usage: Rscript combine-ccle-results.R
 ###############################################################################
 
-S_VALUES    <- c(5L, 10L)
+FIXED_S     <- 10L
 N_PER_BIN   <- 10L
 SAMPLE_SEED <- 2026L
+RUN_SEED_BASE <- 20260000L
 EXPECTED_R  <- 500L
 EXPECTED_B_MAX <- 499L
 EXPECTED_H <- 15L
 EXPECTED_ALPHA <- 0.05
-SCHEMA_VERSION     <- "ccle_synthy_matched_v2"
+EXPECTED_PCM_FRAC <- 0.5
+EXPECTED_RF_NUM_TREES <- 500L
+SCHEMA_VERSION     <- "ccle_synthy_matched_v4"
+SIMULATION_DESIGN  <- "paired_effect_grid_s10"
 CALIBRATION_DESIGN <- "shared_observed_statistic"
+EFFECT_SCALE       <- "noise_sd_equals_sd_mu"
+EFFECT_GRID <- data.frame(
+  effect_idx = seq_len(5L),
+  effect_id = c("delta0", "delta0p5", "delta1", "delta1p5", "delta2"),
+  effect_size = c(0, 0.5, 1, 1.5, 2),
+  hypothesis = c("null", rep("alternative", 4L)),
+  stringsAsFactors = FALSE
+)
 EXPECTED_METHODS <- c(
   "asym_gcm", "asym_pcm", "perm_gcm", "perm_pcm", "naive"
 )
 EXPECTED_STATISTICS <- c("gcm", "pcm")
+EXPECTED_SEED_COMPONENT_OFFSETS <- c(
+  data_seed = 1L,
+  pcm_split_seed = 2L,
+  gcm_permutation_seed = 3L,
+  pcm_permutation_seed = 4L,
+  gcm_YonZ_seed = 5L,
+  gcm_XonZ_seed = 6L,
+  pcm_YonXZ_seed = 7L,
+  pcm_YonZ_seed = 8L,
+  pcm_YhatonZ_seed = 9L,
+  pcm_RonZ_seed = 10L
+)
 
 data_root <- Sys.getenv("LOCAL_PDRT_DATA_DIR", unset = "")
 if (!nzchar(data_root)) {
@@ -104,42 +131,80 @@ TARGETS_DF <- rbind(
   data.frame(target = targets_high, tag = "high_sparsity",   stringsAsFactors = FALSE)
 )
 TARGETS_DF$freq <- freqs[TARGETS_DF$target]
+TARGETS_DF$target_idx <- seq_len(nrow(TARGETS_DF))
 
-SETUPS <- rbind(
-  cbind(TARGETS_DF, s = S_VALUES[1L]),
-  cbind(TARGETS_DF, s = S_VALUES[2L])
-)
+SETUPS <- do.call(rbind, lapply(seq_len(nrow(EFFECT_GRID)), function(effect_idx) {
+  effect <- EFFECT_GRID[effect_idx, ]
+  transform(
+    TARGETS_DF,
+    s = FIXED_S,
+    effect_idx = effect$effect_idx,
+    effect_id = effect$effect_id,
+    effect_size = effect$effect_size,
+    hypothesis = effect$hypothesis,
+    paired_seed_idx = target_idx + nrow(TARGETS_DF)
+  )
+}))
 rownames(SETUPS) <- NULL
+SETUPS$setup_idx <- seq_len(nrow(SETUPS))
+stopifnot(
+  nrow(SETUPS) == 150L,
+  identical(as.integer(SETUPS$setup_idx), seq_len(150L)),
+  identical(
+    as.integer(SETUPS$effect_idx),
+    rep(EFFECT_GRID$effect_idx, each = nrow(TARGETS_DF))
+  ),
+  identical(
+    as.character(SETUPS$effect_id),
+    rep(EFFECT_GRID$effect_id, each = nrow(TARGETS_DF))
+  ),
+  identical(
+    as.integer(SETUPS$target_idx),
+    rep(seq_len(nrow(TARGETS_DF)), times = nrow(EFFECT_GRID))
+  ),
+  identical(
+    as.integer(SETUPS$paired_seed_idx),
+    rep(seq_len(nrow(TARGETS_DF)) + nrow(TARGETS_DF),
+        times = nrow(EFFECT_GRID))
+  )
+)
 
 # ---- Load each per-setup file ----
 expected_files <- file.path(
   bpath,
   sprintf(
-    "ccle-typeI-synthY-30targets-matched-v2-results-%s-s%d.rds",
+    "ccle-typeI-synthY-30targets-matched-v4-results-%s-%s-s%d.rds",
     SETUPS$target,
+    SETUPS$effect_id,
     SETUPS$s
   )
 )
 missing <- expected_files[!file.exists(expected_files)]
 if (length(missing)) {
-  legacy_files <- file.path(
-    bpath,
-    sprintf(
-      "ccle-typeI-synthY-30targets-results-%s-s%d.rds",
-      SETUPS$target,
-      SETUPS$s
-    )
-  )
-  n_legacy <- sum(file.exists(legacy_files[!file.exists(expected_files)]))
   stop(
-    "Missing matched-calibration v2 per-setup files (", length(missing),
+    "Missing paired matched-calibration v4 per-setup files (", length(missing),
     " of ", length(expected_files), "):\n  ",
     paste(head(missing, 20), collapse = "\n  "),
     if (length(missing) > 20) "\n  ..." else "",
-    if (n_legacy > 0L) paste0(
-      "\nFound ", n_legacy, " corresponding legacy file(s); legacy results ",
-      "are intentionally rejected. Rerun the v2 analysis."
-    ) else "",
+    call. = FALSE
+  )
+}
+
+actual_v4_files <- list.files(
+  bpath,
+  pattern = "^ccle-typeI-synthY-30targets-matched-v4-results-.+[.]rds$",
+  full.names = TRUE
+)
+unexpected <- setdiff(
+  normalizePath(actual_v4_files, mustWork = TRUE),
+  normalizePath(expected_files, mustWork = TRUE)
+)
+if (length(unexpected)) {
+  stop(
+    "Unexpected matched-v4 per-setup file(s); the directory must contain ",
+    "exactly the canonical 150-file target-by-effect grid:\n  ",
+    paste(head(unexpected, 20L), collapse = "\n  "),
+    if (length(unexpected) > 20L) "\n  ..." else "",
     call. = FALSE
   )
 }
@@ -147,8 +212,10 @@ if (length(missing)) {
 results <- list()
 
 required_record_fields <- c(
-  "schema_version", "calibration_design", "matched_calibration",
-  "setup_idx", "target", "sparsity_tag", "freq", "s", "R",
+  "schema_version", "simulation_design", "calibration_design",
+  "matched_calibration", "setup_idx", "target_idx", "paired_seed_idx",
+  "target", "sparsity_tag", "freq", "s", "effect_idx", "effect_id",
+  "effect_size", "hypothesis", "effect_scale", "R",
   "B_requested", "B_max", "adaptive_h", "adaptive_alpha", "alternative",
   "pvals", "statistics",
   "replication_metadata", "method_definition", "package_versions",
@@ -158,7 +225,7 @@ required_metadata_fields <- c(
   "rep", "data_seed", "pcm_split_seed", "gcm_permutation_seed",
   "pcm_permutation_seed", "gcm_YonZ_seed", "gcm_XonZ_seed",
   "pcm_YonXZ_seed", "pcm_YonZ_seed", "pcm_YhatonZ_seed",
-  "pcm_RonZ_seed", "pcm_D1_n", "pcm_D2_n", "gcm_actual_B",
+  "pcm_RonZ_seed", "outcome_noise_sd", "pcm_D1_n", "pcm_D2_n", "gcm_actual_B",
   "pcm_actual_B", "gcm_stop_reason", "pcm_stop_reason", "gcm_error",
   "pcm_error", "gcm_matched_statistic", "pcm_matched_statistic",
   "gcm_loss_count", "pcm_loss_count", "gcm_t_star", "pcm_t_star",
@@ -171,6 +238,7 @@ seed_fields <- c(
   "pcm_YonXZ_seed", "pcm_YonZ_seed", "pcm_YhatonZ_seed",
   "pcm_RonZ_seed"
 )
+stopifnot(identical(seed_fields, names(EXPECTED_SEED_COMPONENT_OFFSETS)))
 
 is_integerish <- function(x) {
   is.numeric(x) && all(is.finite(x)) &&
@@ -178,25 +246,40 @@ is_integerish <- function(x) {
 }
 
 validate_record <- function(rec, setup_idx, path) {
-  missing_fields <- setdiff(required_record_fields, names(rec))
-  if (!is.list(rec) || length(missing_fields)) {
+  record_fields <- if (is.list(rec)) names(rec) else character()
+  missing_fields <- setdiff(required_record_fields, record_fields)
+  unexpected_fields <- setdiff(record_fields, required_record_fields)
+  if (!is.list(rec) || length(missing_fields) || length(unexpected_fields)) {
     stop(
-      "Malformed matched-calibration v2 record in ", path,
+      "Malformed paired matched-calibration v4 record in ", path,
       if (length(missing_fields)) paste0(
         "; missing field(s): ", paste(missing_fields, collapse = ", ")
+      ) else "",
+      if (length(unexpected_fields)) paste0(
+        "; unexpected field(s): ", paste(unexpected_fields, collapse = ", ")
       ) else "",
       call. = FALSE
     )
   }
   if (!identical(rec$schema_version, SCHEMA_VERSION) ||
+      !identical(rec$simulation_design, SIMULATION_DESIGN) ||
       !identical(rec$calibration_design, CALIBRATION_DESIGN) ||
       !isTRUE(rec$matched_calibration)) {
     stop(
-      "Legacy or unmatched calibration record rejected: ", path,
+      "Wrong-schema, wrong-design, or unmatched calibration record rejected: ",
+      path,
       call. = FALSE
     )
   }
   if (!identical(as.integer(rec$setup_idx), as.integer(setup_idx)) ||
+      !identical(
+        as.integer(rec$target_idx),
+        as.integer(SETUPS$target_idx[setup_idx])
+      ) ||
+      !identical(
+        as.integer(rec$paired_seed_idx),
+        as.integer(SETUPS$paired_seed_idx[setup_idx])
+      ) ||
       !identical(as.character(rec$target), as.character(SETUPS$target[setup_idx])) ||
       !identical(as.integer(rec$s), as.integer(SETUPS$s[setup_idx])) ||
       !identical(
@@ -208,6 +291,21 @@ validate_record <- function(rec, setup_idx, path) {
         tolerance = 1e-12
       ))) {
     stop("Setup metadata mismatch in ", path, call. = FALSE)
+  }
+  expected_effect_idx <- as.integer(SETUPS$effect_idx[setup_idx])
+  expected_effect_id <- as.character(SETUPS$effect_id[setup_idx])
+  expected_hypothesis <- SETUPS$hypothesis[setup_idx]
+  expected_effect <- SETUPS$effect_size[setup_idx]
+  if (!identical(as.integer(rec$effect_idx), expected_effect_idx) ||
+      !identical(as.character(rec$effect_id), expected_effect_id) ||
+      !identical(as.character(rec$hypothesis), expected_hypothesis) ||
+      length(rec$effect_size) != 1L ||
+      !is.numeric(rec$effect_size) || !is.finite(rec$effect_size) ||
+      !isTRUE(all.equal(
+        as.numeric(rec$effect_size), expected_effect, tolerance = 0
+      )) ||
+      !identical(rec$effect_scale, EFFECT_SCALE)) {
+    stop("Effect-grid metadata mismatch in ", path, call. = FALSE)
   }
   if (!identical(as.integer(rec$R), EXPECTED_R) ||
       !identical(as.integer(rec$B_requested), EXPECTED_B_MAX) ||
@@ -224,7 +322,7 @@ validate_record <- function(rec, setup_idx, path) {
       !identical(dim(rec$pvals), c(EXPECTED_R, length(EXPECTED_METHODS))) ||
       !identical(colnames(rec$pvals), EXPECTED_METHODS) ||
       any(!is.finite(rec$pvals)) || any(rec$pvals < 0 | rec$pvals > 1)) {
-    stop("Invalid or missing v2 p-value matrix in ", path, call. = FALSE)
+    stop("Invalid or missing v4 p-value matrix in ", path, call. = FALSE)
   }
   if (!is.matrix(rec$statistics) || !is.numeric(rec$statistics) ||
       !identical(dim(rec$statistics), c(EXPECTED_R, 2L)) ||
@@ -262,7 +360,8 @@ validate_record <- function(rec, setup_idx, path) {
     required_metadata_fields
   }
   if (!is.data.frame(metadata) || nrow(metadata) != EXPECTED_R ||
-      length(missing_metadata)) {
+      length(missing_metadata) ||
+      length(setdiff(names(metadata), required_metadata_fields))) {
     stop(
       "Invalid replication metadata in ", path,
       if (length(missing_metadata)) paste0(
@@ -274,6 +373,11 @@ validate_record <- function(rec, setup_idx, path) {
   if (!identical(as.integer(metadata$rep), seq_len(EXPECTED_R))) {
     stop("Replication IDs are not 1:R in ", path, call. = FALSE)
   }
+  if (!is.numeric(metadata$outcome_noise_sd) ||
+      any(!is.finite(metadata$outcome_noise_sd)) ||
+      any(metadata$outcome_noise_sd <= 0)) {
+    stop("Invalid outcome-noise scale metadata in ", path, call. = FALSE)
+  }
   bad_seed <- vapply(seed_fields, function(field) {
     !is_integerish(metadata[[field]]) || anyDuplicated(metadata[[field]]) > 0L
   }, logical(1L))
@@ -283,6 +387,27 @@ validate_record <- function(rec, setup_idx, path) {
       paste(seed_fields[bad_seed], collapse = ", "),
       call. = FALSE
     )
+  }
+  expected_seed_matrix <- vapply(
+    seed_fields,
+    function(field) {
+      as.integer(
+        RUN_SEED_BASE +
+          as.double(rec$paired_seed_idx) * 100000 +
+          as.double(seq_len(EXPECTED_R)) * 100 +
+          EXPECTED_SEED_COMPONENT_OFFSETS[[field]]
+      )
+    },
+    integer(EXPECTED_R)
+  )
+  actual_seed_matrix <- vapply(
+    seed_fields,
+    function(field) as.integer(metadata[[field]]),
+    integer(EXPECTED_R)
+  )
+  if (!identical(actual_seed_matrix, expected_seed_matrix)) {
+    stop("Seed metadata disagrees with the paired v4 schedule in ", path,
+         call. = FALSE)
   }
   if (!is_integerish(metadata$pcm_D1_n) ||
       !is_integerish(metadata$pcm_D2_n) ||
@@ -362,10 +487,11 @@ validate_record <- function(rec, setup_idx, path) {
   required_definition <- c(
     "alternative", "regression", "B_requested", "B_max", "h", "alpha",
     "permutation_mode", "n_cores", "pcm_frac", "rf_num_trees",
-    "rf_num_threads", "role_specific_rf_seeds"
+    "rf_num_threads", "role_specific_rf_seeds", "gcm", "pcm",
+    "seed_schedule"
   )
   if (!is.list(definition) ||
-      length(setdiff(required_definition, names(definition))) ||
+      !setequal(names(definition), required_definition) ||
       !identical(definition$alternative, "two.sided") ||
       !identical(definition$regression, "rf") ||
       !identical(as.integer(definition$B_requested), EXPECTED_B_MAX) ||
@@ -379,11 +505,54 @@ validate_record <- function(rec, setup_idx, path) {
       !identical(as.integer(definition$rf_num_threads), 1L) ||
       !isTRUE(definition$role_specific_rf_seeds) ||
       length(definition$rf_num_trees) != 1L ||
-      !is_integerish(definition$rf_num_trees) ||
+      !identical(as.integer(definition$rf_num_trees), EXPECTED_RF_NUM_TREES) ||
       length(definition$pcm_frac) != 1L ||
-      !is.finite(definition$pcm_frac) || definition$pcm_frac <= 0 ||
-      definition$pcm_frac >= 1) {
-    stop("Invalid v2 method definition in ", path, call. = FALSE)
+      !isTRUE(all.equal(
+        as.numeric(definition$pcm_frac), EXPECTED_PCM_FRAC, tolerance = 0
+      )) ||
+      !identical(
+        definition$gcm,
+        paste(
+          "One pcmt::perm_gcm fit; fit$statistic is normal-calibrated and",
+          "fit$p.value is permutation-calibrated."
+        )
+      ) ||
+      !identical(
+        definition$pcm,
+        paste(
+          "One pcmt::perm_pcm fit with explicit D2 indices; fit$statistic",
+          "is normal-calibrated and fit$p.value is permutation-calibrated."
+        )
+      )) {
+    stop("Invalid v4 method definition in ", path, call. = FALSE)
+  }
+  seed_schedule <- definition$seed_schedule
+  required_schedule_fields <- c(
+    "base", "formula", "schedule_index", "setup_order",
+    "paired_across_effect_sizes", "component_offsets"
+  )
+  if (!is.list(seed_schedule) ||
+      !setequal(names(seed_schedule), required_schedule_fields) ||
+      !identical(as.integer(seed_schedule$base), RUN_SEED_BASE) ||
+      !identical(
+        seed_schedule$formula,
+        paste0(
+          "base + paired_seed_idx * 100000 + rep * 100 + ",
+          "component_offset"
+        )
+      ) ||
+      !identical(
+        seed_schedule$schedule_index,
+        "paired_seed_idx = target_idx + 30"
+      ) ||
+      !identical(seed_schedule$setup_order, "effect_major_then_target") ||
+      !isTRUE(seed_schedule$paired_across_effect_sizes) ||
+      !identical(
+        seed_schedule$component_offsets,
+        EXPECTED_SEED_COMPONENT_OFFSETS
+      )) {
+    stop("Invalid v4 paired seed-schedule definition in ", path,
+         call. = FALSE)
   }
   versions <- rec$package_versions
   if (!is.character(versions) || is.null(names(versions)) ||
@@ -418,16 +587,31 @@ for (i in seq_along(expected_files)) {
   rec <- obj[[1L]]
   validate_record(rec, i, expected_files[i])
 
-  key <- sprintf("%s_s%d", rec$target, rec$s)
+  key <- sprintf("%s_%s_s%d", rec$target, rec$effect_id, rec$s)
   if (key %in% names(results)) {
     stop("Duplicate setup key: ", key, call. = FALSE)
   }
   results[[key]] <- rec
 }
 
-if (length(results) != 60L) {
-  stop("Expected exactly 60 validated v2 setups; got ", length(results),
+if (length(results) != 150L) {
+  stop("Expected exactly 150 validated v4 setups; got ", length(results),
        call. = FALSE)
+}
+
+setup_ids <- vapply(results, function(rec) as.integer(rec$setup_idx), integer(1L))
+target_ids <- vapply(results, function(rec) as.integer(rec$target_idx), integer(1L))
+effect_ids <- vapply(results, function(rec) as.character(rec$effect_id), character(1L))
+target_names <- vapply(results, function(rec) as.character(rec$target), character(1L))
+if (!identical(unname(sort(setup_ids)), seq_len(150L)) ||
+    !identical(unname(sort(unique(target_ids))), seq_len(30L)) ||
+    !identical(unname(unique(effect_ids)), EFFECT_GRID$effect_id) ||
+    any(table(target_ids, factor(effect_ids, levels = EFFECT_GRID$effect_id)) != 1L) ||
+    any(table(target_names, factor(effect_ids, levels = EFFECT_GRID$effect_id)) != 1L)) {
+  stop(
+    "Validated records do not form the exact 30-target by 5-effect cross-product.",
+    call. = FALSE
+  )
 }
 
 reference_definition <- results[[1L]]$method_definition
@@ -437,28 +621,236 @@ if (!all(vapply(
       function(rec) identical(rec$method_definition, reference_definition),
       logical(1L)
     ))) {
-  stop("The 60 v2 setups do not share one method definition.", call. = FALSE)
+  stop("The 150 v4 setups do not share one method definition.", call. = FALSE)
 }
 if (!all(vapply(
       results,
       function(rec) identical(rec$package_versions, reference_versions),
       logical(1L)
     ))) {
-  stop("The 60 v2 setups were produced by different package versions.",
+  stop("The 150 v4 setups were produced by different package versions.",
        call. = FALSE)
 }
-all_component_seeds <- unlist(lapply(results, function(rec) {
+
+# Every effect for a target must reuse exactly the delta0 stochastic
+# scaffolding. Method outputs and adaptive stopping diagnostics may differ with
+# the outcome and are deliberately not compared. Across targets, every
+# target/replicate/component stream must remain distinct. Validate pairing
+# before checking global uniqueness on the 30 canonical delta0 records only.
+for (target_idx in seq_len(nrow(TARGETS_DF))) {
+  target <- TARGETS_DF$target[target_idx]
+  delta0_key <- sprintf("%s_delta0_s%d", target, FIXED_S)
+  delta0_rec <- results[[delta0_key]]
+  if (is.null(delta0_rec)) {
+    stop("Missing delta0 pairing reference for target ", target,
+         call. = FALSE)
+  }
+  delta0_metadata <- delta0_rec$replication_metadata
+
+  for (effect_id in EFFECT_GRID$effect_id[-1L]) {
+    effect_key <- sprintf("%s_%s_s%d", target, effect_id, FIXED_S)
+    effect_rec <- results[[effect_key]]
+    if (is.null(effect_rec)) {
+      stop("Missing effect ", effect_id, " for target ", target,
+           call. = FALSE)
+    }
+    effect_metadata <- effect_rec$replication_metadata
+    paired_seed_fields_match <- all(vapply(seed_fields, function(field) {
+      identical(
+        as.integer(delta0_metadata[[field]]),
+        as.integer(effect_metadata[[field]])
+      )
+    }, logical(1L)))
+    paired_scaffolding_matches <-
+      identical(
+        as.numeric(delta0_metadata$outcome_noise_sd),
+        as.numeric(effect_metadata$outcome_noise_sd)
+      ) &&
+      identical(
+        as.integer(delta0_metadata$pcm_D1_n),
+        as.integer(effect_metadata$pcm_D1_n)
+      ) &&
+      identical(
+        as.integer(delta0_metadata$pcm_D2_n),
+        as.integer(effect_metadata$pcm_D2_n)
+      ) &&
+      identical(
+        delta0_metadata$pcm_D2_indices,
+        effect_metadata$pcm_D2_indices
+      )
+    if (!paired_seed_fields_match || !paired_scaffolding_matches) {
+      stop(
+        "Delta0/effect stochastic pairing mismatch for target ", target,
+        " at ", effect_id,
+        call. = FALSE
+      )
+    }
+  }
+}
+
+delta0_results <- results[vapply(
+  results,
+  function(rec) identical(rec$effect_id, "delta0"),
+  logical(1L)
+)]
+if (length(delta0_results) != nrow(TARGETS_DF)) {
+  stop("Expected one canonical delta0 record for each target.", call. = FALSE)
+}
+canonical_component_seeds <- unlist(lapply(delta0_results, function(rec) {
   unlist(rec$replication_metadata[seed_fields], use.names = FALSE)
 }), use.names = FALSE)
-if (anyDuplicated(all_component_seeds)) {
-  stop("Seed streams overlap across the 60 v2 setups.", call. = FALSE)
+expected_seed_count <-
+  nrow(TARGETS_DF) * EXPECTED_R * length(seed_fields)
+if (length(canonical_component_seeds) != expected_seed_count ||
+    anyDuplicated(canonical_component_seeds)) {
+  stop(
+    paste0(
+      "Seed streams overlap across distinct target/replicate/component ",
+      "combinations."
+    ),
+    call. = FALSE
+  )
+}
+
+# ---- Long-format rejection table ----
+rej_df <- do.call(rbind, lapply(results, function(r) {
+  data.frame(setup_idx = r$setup_idx,
+             target_idx = r$target_idx,
+             paired_seed_idx = r$paired_seed_idx,
+             target = r$target,
+             sparsity_tag = r$sparsity_tag,
+             freq = r$freq,
+             s = r$s,
+             effect_idx = r$effect_idx,
+             effect_id = r$effect_id,
+             effect_size = r$effect_size,
+             hypothesis = r$hypothesis,
+             effect_scale = r$effect_scale,
+             method = names(r$rejection_rate),
+             rejection_rate = unname(r$rejection_rate),
+             na_rate = unname(r$na_rate[names(r$rejection_rate)]),
+             stringsAsFactors = FALSE)
+}))
+rownames(rej_df) <- NULL
+
+delta0_rates <- rej_df[
+  rej_df$effect_id == "delta0",
+  c("target", "method", "rejection_rate")
+]
+names(delta0_rates)[names(delta0_rates) == "rejection_rate"] <-
+  "delta0_rejection_rate"
+gain_key <- paste(rej_df$target, rej_df$method, sep = "\r")
+delta0_key <- paste(delta0_rates$target, delta0_rates$method, sep = "\r")
+delta0_match <- match(gain_key, delta0_key)
+if (anyNA(delta0_match)) {
+  stop("Could not match every target/method row to its delta0 reference.",
+       call. = FALSE)
+}
+rej_df$delta0_rejection_rate <-
+  delta0_rates$delta0_rejection_rate[delta0_match]
+rej_df$paired_gain_vs_delta0 <-
+  rej_df$rejection_rate - rej_df$delta0_rejection_rate
+if (any(rej_df$effect_id == "delta0" &
+        rej_df$paired_gain_vs_delta0 != 0)) {
+  stop("Delta0 rows must have zero paired rejection gain.", call. = FALSE)
+}
+
+summary_df <- aggregate(
+  cbind(rejection_rate, paired_gain_vs_delta0) ~
+    effect_idx + effect_id + effect_size + hypothesis + method,
+  data = rej_df,
+  FUN = mean
+)
+names(summary_df)[names(summary_df) == "rejection_rate"] <-
+  "mean_rejection_rate"
+names(summary_df)[names(summary_df) == "paired_gain_vs_delta0"] <-
+  "mean_paired_gain_vs_delta0"
+summary_df <- summary_df[
+  order(
+    summary_df$effect_idx,
+    match(summary_df$method, EXPECTED_METHODS)
+  ),
+  c(
+    "effect_idx", "effect_id", "effect_size", "hypothesis", "method",
+    "mean_rejection_rate", "mean_paired_gain_vs_delta0"
+  )
+]
+rownames(summary_df) <- NULL
+
+paired_gain_df <- summary_df[
+  summary_df$effect_id != "delta0",
+  c(
+    "effect_idx", "effect_id", "effect_size", "hypothesis", "method",
+    "mean_paired_gain_vs_delta0"
+  )
+]
+rownames(paired_gain_df) <- NULL
+
+summary_by_sparsity <- aggregate(
+  cbind(rejection_rate, paired_gain_vs_delta0) ~
+    sparsity_tag + effect_idx + effect_id + effect_size + hypothesis + method,
+  data = rej_df,
+  FUN = mean
+)
+names(summary_by_sparsity)[
+  names(summary_by_sparsity) == "rejection_rate"
+] <- "mean_rejection_rate"
+names(summary_by_sparsity)[
+  names(summary_by_sparsity) == "paired_gain_vs_delta0"
+] <- "mean_paired_gain_vs_delta0"
+summary_by_sparsity$n_targets <- 10L
+summary_by_sparsity$n_reps <- EXPECTED_R
+sparsity_order <- c("low_sparsity", "medium_sparsity", "high_sparsity")
+summary_by_sparsity <- summary_by_sparsity[
+  order(
+    match(summary_by_sparsity$sparsity_tag, sparsity_order),
+    summary_by_sparsity$effect_idx,
+    match(summary_by_sparsity$method, EXPECTED_METHODS)
+  ),
+  c(
+    "sparsity_tag", "effect_idx", "effect_id", "effect_size", "hypothesis",
+    "method", "mean_rejection_rate", "mean_paired_gain_vs_delta0",
+    "n_targets", "n_reps"
+  )
+]
+rownames(summary_by_sparsity) <- NULL
+
+summary_cell_counts <- aggregate(
+  target ~ sparsity_tag + effect_id + method,
+  data = rej_df,
+  FUN = function(x) length(unique(x))
+)
+if (nrow(summary_by_sparsity) !=
+      length(sparsity_order) * nrow(EFFECT_GRID) * length(EXPECTED_METHODS) ||
+    nrow(summary_cell_counts) != nrow(summary_by_sparsity) ||
+    any(summary_cell_counts$target != 10L) ||
+    any(summary_by_sparsity$n_targets != 10L) ||
+    any(summary_by_sparsity$n_reps != EXPECTED_R)) {
+  stop("Sparsity-by-effect summary cells must contain exactly 10 targets.",
+       call. = FALSE)
 }
 
 combined <- list(
   schema_version = SCHEMA_VERSION,
+  simulation_design = SIMULATION_DESIGN,
   calibration_design = CALIBRATION_DESIGN,
   matched_calibration = TRUE,
+  n_targets = nrow(TARGETS_DF),
   n_setups = length(results),
+  fixed_s = FIXED_S,
+  effect_grid = EFFECT_GRID,
+  effect_ids = EFFECT_GRID$effect_id,
+  effect_sizes = stats::setNames(EFFECT_GRID$effect_size, EFFECT_GRID$effect_id),
+  hypotheses = stats::setNames(EFFECT_GRID$hypothesis, EFFECT_GRID$effect_id),
+  effect_scale = EFFECT_SCALE,
+  setup_order = "effect_major_then_target",
+  paired_seed_indices = seq_len(nrow(TARGETS_DF)) + nrow(TARGETS_DF),
+  seed_pairing = list(
+    formula = "paired_seed_idx = target_idx + 30",
+    reference_effect_id = "delta0",
+    paired_across_effect_sizes = TRUE,
+    component_fields = seed_fields
+  ),
   R = EXPECTED_R,
   B_requested = EXPECTED_B_MAX,
   B_max = EXPECTED_B_MAX,
@@ -469,46 +861,102 @@ combined <- list(
   statistics = EXPECTED_STATISTICS,
   method_definition = reference_definition,
   package_versions = reference_versions,
+  summary_by_effect_method = summary_df,
+  paired_gain_vs_delta0_by_effect_method = paired_gain_df,
+  summary_by_sparsity_effect_method = summary_by_sparsity,
   results = results
 )
 combined_path <- file.path(
   bpath,
-  "ccle-typeI-synthY-30targets-matched-v2-results.rds"
+  "ccle-typeI-synthY-30targets-matched-v4-results.rds"
+)
+rejection_path <- file.path(
+  bpath,
+  "ccle-typeI-synthY-30targets-matched-v4-rejection-rates.csv"
 )
 combined_tmp <- tempfile(
   pattern = paste0(basename(combined_path), ".tmp-"),
   tmpdir = dirname(combined_path)
 )
-on.exit(unlink(combined_tmp), add = TRUE)
+rejection_tmp <- tempfile(
+  pattern = paste0(basename(rejection_path), ".tmp-"),
+  tmpdir = dirname(rejection_path)
+)
+cleanup_paths <- c(combined_tmp, rejection_tmp)
+on.exit(unlink(cleanup_paths, recursive = TRUE, force = TRUE), add = TRUE)
 saveRDS(combined, combined_tmp)
-if (!file.rename(combined_tmp, combined_path)) {
-  stop("Failed to atomically publish combined v2 result: ", combined_path,
-       call. = FALSE)
+write.csv(rej_df, rejection_tmp, row.names = FALSE)
+
+publish_pair <- function(rds_tmp, rds_path, csv_tmp, csv_path) {
+  output_paths <- c(rds_path, csv_path)
+  temp_paths <- c(rds_tmp, csv_tmp)
+  existed <- file.exists(output_paths)
+  backups <- rep(NA_character_, length(output_paths))
+
+  for (i in seq_along(output_paths)) {
+    if (existed[[i]]) {
+      backups[[i]] <- tempfile(
+        pattern = paste0(basename(output_paths[[i]]), ".backup-"),
+        tmpdir = dirname(output_paths[[i]])
+      )
+      if (!file.copy(output_paths[[i]], backups[[i]], overwrite = FALSE)) {
+        stop("Could not back up existing output before publication: ",
+             output_paths[[i]], call. = FALSE)
+      }
+    }
+  }
+  backup_paths <- backups[!is.na(backups)]
+  on.exit(unlink(backup_paths, recursive = TRUE, force = TRUE), add = TRUE)
+
+  restore_prior_pair <- function() {
+    restored <- logical(length(output_paths))
+    for (i in seq_along(output_paths)) {
+      if (existed[[i]]) {
+        restored[[i]] <- file.copy(
+          backups[[i]], output_paths[[i]], overwrite = TRUE
+        )
+      } else {
+        unlink(output_paths[[i]], recursive = TRUE, force = TRUE)
+        restored[[i]] <- !file.exists(output_paths[[i]])
+      }
+    }
+    all(restored)
+  }
+
+  if (!file.rename(temp_paths[[1L]], output_paths[[1L]])) {
+    stop("Failed to publish combined v4 RDS: ", output_paths[[1L]],
+         call. = FALSE)
+  }
+
+  # This failure injection exists only to exercise rollback in isolated tests.
+  if (identical(
+        Sys.getenv("CCLE_COMBINER_TEST_FAIL_SECOND_PUBLISH", unset = "0"),
+        "1"
+      )) {
+    unlink(temp_paths[[2L]])
+  }
+
+  if (!file.rename(temp_paths[[2L]], output_paths[[2L]])) {
+    rollback_ok <- restore_prior_pair()
+    stop(
+      "Failed to publish v4 rejection CSV after publishing the RDS; ",
+      if (rollback_ok) {
+        "the prior output pair was restored."
+      } else {
+        "rollback was incomplete; inspect both output paths before reuse."
+      },
+      call. = FALSE
+    )
+  }
+  invisible(TRUE)
 }
 
-# ---- Long-format rejection table ----
-rej_df <- do.call(rbind, lapply(results, function(r) {
-  data.frame(target = r$target,
-             sparsity_tag = r$sparsity_tag,
-             freq = r$freq,
-             s = r$s,
-             method = names(r$rejection_rate),
-             rejection_rate = unname(r$rejection_rate),
-             na_rate = unname(r$na_rate[names(r$rejection_rate)]),
-             stringsAsFactors = FALSE)
-}))
-rownames(rej_df) <- NULL
-rejection_path <- file.path(
-  bpath,
-  "ccle-typeI-synthY-30targets-matched-v2-rejection-rates.csv"
-)
-write.csv(rej_df, rejection_path, row.names = FALSE)
+publish_pair(combined_tmp, combined_path, rejection_tmp, rejection_path)
 
-cat("=== Combined matched-calibration v2 summary (", length(results),
+cat("=== Combined paired matched-calibration v4 summary (", length(results),
     " setups) ===\n", sep = "")
-cat(sprintf("Mean rejection rate per (method, s):\n"))
-agg <- aggregate(rejection_rate ~ method + s, data = rej_df, FUN = mean)
-print(agg)
+cat("Mean rejection rate and paired gain per (effect, method):\n")
+print(summary_df)
 cat("\nSaved:\n")
 cat("  ", combined_path, "\n")
 cat("  ", rejection_path, "\n")

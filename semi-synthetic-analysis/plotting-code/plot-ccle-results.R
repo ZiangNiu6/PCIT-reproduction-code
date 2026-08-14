@@ -1,17 +1,16 @@
 #!/usr/bin/env Rscript
 ###############################################################################
-# Plot CCLE Synthetic-Y 30-targets x s in {5,10} sweep (60 setups).
+# Plot the paired CCLE synthetic-outcome analysis at s = 10.
 #
-# Reads only the matched-calibration v2 combined result under
-# $LOCAL_PDRT_DATA_DIR/ccle and writes GCM-focused versions of the labelled
-# p-value quantile diagnostic, standalone CHIC2 calibration preview, and
-# combined Type-I figure directly to project-progress/combine/figures-and-tables.
-# The plotted procedures are permutation GCM, asymptotic GCM, and Pearson;
-# stored PCM results remain part of the strict input validation but are not
-# displayed. Test type is encoded by colour and calibration by line or border
-# type. Pass --intro-only to regenerate only the standalone CHIC2 calibration
-# preview used as Figure 1, or --validate-only to check the combined artifact
-# without writing figures.
+# The preferred input is the matched-v4 result containing the complete
+# 30-target x 5-effect grid at s = 10. The plotter can also validate and use a
+# transitional matched-v3 or matched-v2 artifact when selected through
+# CCLE_RESULTS_SCHEMA=auto|v4|v3|v2 (default: auto, priority v4 > v3 > v2).
+# Unmatched legacy results are never accepted. Existing null-figure filenames
+# are preserved. V4 additionally writes an equal-target, sparsity-grouped GCM
+# nominal-rejection curve over the effect grid. Pass --intro-only to regenerate
+# only the standalone CHIC2 preview or --validate-only to validate without
+# writing figures.
 ###############################################################################
 
 script_args <- commandArgs(trailingOnly = TRUE)
@@ -84,23 +83,80 @@ if (!file.exists(style_path)) {
 }
 source(style_path)
 
-SCHEMA_VERSION     <- "ccle_synthy_matched_v2"
+SCHEMA_V2          <- "ccle_synthy_matched_v2"
+SCHEMA_V3          <- "ccle_synthy_matched_v3"
+SCHEMA_V4          <- "ccle_synthy_matched_v4"
+SIMULATION_DESIGN_V3 <- "paired_null_alternative_s10"
+SIMULATION_DESIGN_V4 <- "paired_effect_grid_s10"
 CALIBRATION_DESIGN <- "shared_observed_statistic"
 EXPECTED_R <- 500L
 EXPECTED_B_MAX <- 499L
 EXPECTED_H <- 15L
 EXPECTED_ALPHA <- 0.05
+EXPECTED_S <- 10L
+EXPECTED_ALT_EFFECT <- 0.75
+EXPECTED_EFFECT_IDS_V4 <- c(
+  "delta0", "delta0p5", "delta1", "delta1p5", "delta2"
+)
+EXPECTED_EFFECTS_V4 <- c(0, 0.5, 1, 1.5, 2)
+EXPECTED_EFFECT_SCALE <- "noise_sd_equals_sd_mu"
 
-results_path <- file.path(
+results_path_v4 <- file.path(
+  data_root,
+  "ccle",
+  "ccle-typeI-synthY-30targets-matched-v4-results.rds"
+)
+results_path_v3 <- file.path(
+  data_root,
+  "ccle",
+  "ccle-typeI-synthY-30targets-matched-v3-results.rds"
+)
+results_path_v2 <- file.path(
   data_root,
   "ccle",
   "ccle-typeI-synthY-30targets-matched-v2-results.rds"
 )
-if (!file.exists(results_path)) {
+schema_request <- tolower(Sys.getenv("CCLE_RESULTS_SCHEMA", unset = "auto"))
+valid_schema_requests <- c("auto", "v4", "v3", "v2")
+if (!schema_request %in% valid_schema_requests) {
   stop(
-    "Matched-calibration v2 CCLE results not found: ", results_path,
-    "\nRun combine-ccle-results.R after all 60 setup jobs finish.",
-    " Legacy combined results are intentionally not accepted.",
+    "CCLE_RESULTS_SCHEMA must be one of: ",
+    paste(valid_schema_requests, collapse = ", "),
+    call. = FALSE
+  )
+}
+schema_paths <- c(
+  v4 = results_path_v4,
+  v3 = results_path_v3,
+  v2 = results_path_v2
+)
+schema_versions <- c(v4 = SCHEMA_V4, v3 = SCHEMA_V3, v2 = SCHEMA_V2)
+if (identical(schema_request, "auto")) {
+  available <- names(schema_paths)[file.exists(schema_paths)]
+  selected_schema <- if (length(available)) available[[1L]] else NA_character_
+} else {
+  selected_schema <- schema_request
+}
+if (is.na(selected_schema) || !file.exists(schema_paths[[selected_schema]])) {
+  stop(
+    if (!identical(schema_request, "auto")) paste0(
+      "The explicitly selected ", schema_request,
+      " CCLE result is unavailable: ", schema_paths[[schema_request]], "\n"
+    ) else "No matched CCLE result found. Expected one of:\n",
+    if (identical(schema_request, "auto")) {
+      paste0("  ", paste(unname(schema_paths), collapse = "\n  "), "\n")
+    } else "",
+    "Run combine-ccle-results.R after the required setup jobs finish.",
+    " Unmatched legacy results are intentionally not accepted.",
+    call. = FALSE
+  )
+}
+results_path <- unname(schema_paths[[selected_schema]])
+input_schema <- unname(schema_versions[[selected_schema]])
+if (!identical(selected_schema, "v4")) {
+  warning(
+    "Using explicitly validated transitional matched-", selected_schema,
+    " CCLE results; the complete v4 effect-grid diagnostic is unavailable.",
     call. = FALSE
   )
 }
@@ -120,12 +176,18 @@ required_combined_fields <- c(
   "alternative", "methods", "statistics", "method_definition",
   "package_versions", "results"
 )
+expected_n_setups <- switch(
+  selected_schema,
+  v4 = 150L,
+  v3 = 60L,
+  v2 = 60L
+)
 if (!is.list(combined) ||
     length(setdiff(required_combined_fields, names(combined))) ||
-    !identical(combined$schema_version, SCHEMA_VERSION) ||
+    !identical(combined$schema_version, input_schema) ||
     !identical(combined$calibration_design, CALIBRATION_DESIGN) ||
     !isTRUE(combined$matched_calibration) ||
-    !identical(as.integer(combined$n_setups), 60L) ||
+    !identical(as.integer(combined$n_setups), expected_n_setups) ||
     !identical(as.integer(combined$R), EXPECTED_R) ||
     !identical(as.integer(combined$B_requested), EXPECTED_B_MAX) ||
     !identical(as.integer(combined$B_max), EXPECTED_B_MAX) ||
@@ -142,6 +204,83 @@ if (!is.list(combined) ||
     call. = FALSE
   )
 }
+if (identical(input_schema, SCHEMA_V3)) {
+  required_v3_combined <- c(
+    "simulation_design", "fixed_s", "hypotheses", "effect_sizes",
+    "effect_scale"
+  )
+  if (length(setdiff(required_v3_combined, names(combined))) ||
+      !identical(combined$simulation_design, SIMULATION_DESIGN_V3) ||
+      !identical(as.integer(combined$fixed_s), EXPECTED_S) ||
+      !identical(as.character(combined$hypotheses), c("null", "alternative")) ||
+      !isTRUE(all.equal(
+        as.numeric(combined$effect_sizes), c(0, EXPECTED_ALT_EFFECT),
+        tolerance = 0
+      )) ||
+      !identical(combined$effect_scale, EXPECTED_EFFECT_SCALE)) {
+    stop("Malformed paired matched-v3 CCLE design: ", results_path,
+         call. = FALSE)
+  }
+}
+if (identical(input_schema, SCHEMA_V4)) {
+  required_v4_combined <- c(
+    "simulation_design", "n_targets", "fixed_s", "hypotheses",
+    "effect_ids", "effect_sizes", "effect_grid", "setup_order",
+    "paired_seed_indices", "seed_pairing", "effect_scale"
+  )
+  if (length(setdiff(required_v4_combined, names(combined))) ||
+      !identical(combined$simulation_design, SIMULATION_DESIGN_V4) ||
+      !identical(as.integer(combined$n_targets), 30L) ||
+      !identical(as.integer(combined$fixed_s), EXPECTED_S) ||
+      !identical(names(combined$hypotheses), EXPECTED_EFFECT_IDS_V4) ||
+      !identical(
+        unname(as.character(combined$hypotheses)),
+        c("null", rep("alternative", 4L))
+      ) ||
+      !identical(as.character(combined$effect_ids), EXPECTED_EFFECT_IDS_V4) ||
+      !identical(names(combined$effect_sizes), EXPECTED_EFFECT_IDS_V4) ||
+      !isTRUE(all.equal(
+        as.numeric(combined$effect_sizes), EXPECTED_EFFECTS_V4,
+        tolerance = 0
+      )) ||
+      !is.data.frame(combined$effect_grid) ||
+      !identical(
+        names(combined$effect_grid),
+        c("effect_idx", "effect_id", "effect_size", "hypothesis")
+      ) ||
+      !identical(as.integer(combined$effect_grid$effect_idx), 1:5) ||
+      !identical(as.character(combined$effect_grid$effect_id),
+                 EXPECTED_EFFECT_IDS_V4) ||
+      !isTRUE(all.equal(
+        as.numeric(combined$effect_grid$effect_size), EXPECTED_EFFECTS_V4,
+        tolerance = 0
+      )) ||
+      !identical(
+        as.character(combined$effect_grid$hypothesis),
+        c("null", rep("alternative", 4L))
+      ) ||
+      !identical(combined$setup_order, "effect_major_then_target") ||
+      !identical(as.integer(combined$paired_seed_indices), 31:60) ||
+      !is.list(combined$seed_pairing) ||
+      !identical(
+        names(combined$seed_pairing),
+        c(
+          "formula", "reference_effect_id", "paired_across_effect_sizes",
+          "component_fields"
+        )
+      ) ||
+      !identical(
+        combined$seed_pairing$formula,
+        "paired_seed_idx = target_idx + 30"
+      ) ||
+      !identical(combined$seed_pairing$reference_effect_id, "delta0") ||
+      !isTRUE(combined$seed_pairing$paired_across_effect_sizes) ||
+      !identical(combined$seed_pairing$component_fields, seed_fields) ||
+      !identical(combined$effect_scale, EXPECTED_EFFECT_SCALE)) {
+    stop("Malformed paired matched-v4 CCLE effect-grid design: ", results_path,
+         call. = FALSE)
+  }
+}
 results <- combined$results
 
 required_record_fields <- c(
@@ -152,13 +291,24 @@ required_record_fields <- c(
   "replication_metadata", "method_definition", "package_versions",
   "rejection_rate", "na_rate"
 )
+required_record_fields_v3 <- c(
+  "simulation_design", "target_idx", "hypothesis", "effect_size",
+  "effect_scale", "paired_seed_idx"
+)
+required_record_fields_v4 <- c(
+  required_record_fields_v3, "effect_idx", "effect_id"
+)
 validate_record <- function(record, key) {
   if (!is.list(record) ||
-      !all(required_record_fields %in% names(record))) {
-    stop("Malformed matched-calibration v2 CCLE record: ", key,
+      !all(required_record_fields %in% names(record)) ||
+      (identical(input_schema, SCHEMA_V3) &&
+       !all(required_record_fields_v3 %in% names(record))) ||
+      (identical(input_schema, SCHEMA_V4) &&
+       !all(required_record_fields_v4 %in% names(record)))) {
+    stop("Malformed matched-calibration CCLE record: ", key,
          call. = FALSE)
   }
-  if (!identical(record$schema_version, SCHEMA_VERSION) ||
+  if (!identical(record$schema_version, input_schema) ||
       !identical(record$calibration_design, CALIBRATION_DESIGN) ||
       !isTRUE(record$matched_calibration)) {
     stop("Legacy or unmatched CCLE record rejected: ", key, call. = FALSE)
@@ -176,7 +326,7 @@ validate_record <- function(record, key) {
       !identical(colnames(record$pvals), storage_methods) ||
       !identical(names(record$rejection_rate), storage_methods) ||
       !identical(names(record$na_rate), storage_methods)) {
-    stop("Noncanonical v2 CCLE method/replication schema in: ", key,
+    stop("Noncanonical CCLE method/replication schema in: ", key,
          call. = FALSE)
   }
   if (!is.matrix(record$statistics) || !is.numeric(record$statistics) ||
@@ -185,13 +335,83 @@ validate_record <- function(record, key) {
       any(!is.finite(record$statistics))) {
     stop("Invalid shared observed statistics in: ", key, call. = FALSE)
   }
+  expected_key <- if (identical(input_schema, SCHEMA_V4)) {
+    sprintf("%s_%s_s%d", record$target, record$effect_id, record$s)
+  } else if (identical(input_schema, SCHEMA_V3)) {
+    sprintf("%s_%s_s%d", record$target, record$hypothesis, record$s)
+  } else {
+    sprintf("%s_s%d", record$target, record$s)
+  }
   if (length(record$setup_idx) != 1L || is.na(record$setup_idx) ||
       length(record$target) != 1L || is.na(record$target) ||
       length(record$sparsity_tag) != 1L || is.na(record$sparsity_tag) ||
       length(record$freq) != 1L || !is.finite(record$freq) ||
       length(record$s) != 1L || is.na(record$s) ||
-      !identical(key, sprintf("%s_s%d", record$target, record$s))) {
+      !identical(key, expected_key)) {
     stop("Invalid CCLE setup metadata in: ", key, call. = FALSE)
+  }
+  if (identical(input_schema, SCHEMA_V3)) {
+    expected_effect <- if (identical(record$hypothesis, "null")) {
+      0
+    } else if (identical(record$hypothesis, "alternative")) {
+      EXPECTED_ALT_EFFECT
+    } else {
+      NA_real_
+    }
+    if (!identical(record$simulation_design, SIMULATION_DESIGN_V3) ||
+        !identical(as.integer(record$s), EXPECTED_S) ||
+        length(record$target_idx) != 1L || is.na(record$target_idx) ||
+        record$target_idx < 1L || record$target_idx > 30L ||
+        length(record$paired_seed_idx) != 1L ||
+        !identical(
+          as.integer(record$paired_seed_idx),
+          as.integer(record$target_idx) + 30L
+        ) ||
+        !is.finite(expected_effect) ||
+        !isTRUE(all.equal(
+          as.numeric(record$effect_size), expected_effect, tolerance = 0
+        )) ||
+        !identical(record$effect_scale, EXPECTED_EFFECT_SCALE)) {
+      stop("Invalid paired simulation metadata in: ", key, call. = FALSE)
+    }
+  }
+  if (identical(input_schema, SCHEMA_V4)) {
+    effect_idx <- as.integer(record$effect_idx)
+    expected_effect <- if (
+      length(effect_idx) == 1L && !is.na(effect_idx) &&
+      effect_idx >= 1L && effect_idx <= length(EXPECTED_EFFECTS_V4)
+    ) EXPECTED_EFFECTS_V4[[effect_idx]] else NA_real_
+    expected_effect_id <- if (is.finite(expected_effect)) {
+      EXPECTED_EFFECT_IDS_V4[[effect_idx]]
+    } else {
+      NA_character_
+    }
+    expected_hypothesis <- if (isTRUE(expected_effect == 0)) {
+      "null"
+    } else {
+      "alternative"
+    }
+    if (!identical(record$simulation_design, SIMULATION_DESIGN_V4) ||
+        !identical(as.integer(record$s), EXPECTED_S) ||
+        length(record$target_idx) != 1L || is.na(record$target_idx) ||
+        record$target_idx < 1L || record$target_idx > 30L ||
+        length(record$paired_seed_idx) != 1L ||
+        !identical(
+          as.integer(record$paired_seed_idx),
+          as.integer(record$target_idx) + 30L
+        ) ||
+        !is.finite(expected_effect) ||
+        !identical(as.integer(record$setup_idx),
+                   (effect_idx - 1L) * 30L + as.integer(record$target_idx)) ||
+        !identical(as.character(record$effect_id), expected_effect_id) ||
+        !isTRUE(all.equal(
+          as.numeric(record$effect_size), expected_effect, tolerance = 0
+        )) ||
+        !identical(as.character(record$hypothesis), expected_hypothesis) ||
+        !identical(record$effect_scale, EXPECTED_EFFECT_SCALE)) {
+      stop("Invalid paired v4 effect-grid metadata in: ", key,
+           call. = FALSE)
+    }
   }
   if (any(!is.finite(record$pvals)) ||
       any(record$pvals < 0 | record$pvals > 1) ||
@@ -228,11 +448,20 @@ validate_record <- function(record, key) {
     "pcm_stopped_early", "gcm_adaptive_backend", "pcm_adaptive_backend",
     "pcm_D2_indices"
   )
+  if (input_schema %in% c(SCHEMA_V3, SCHEMA_V4)) {
+    required_metadata <- c(required_metadata, "outcome_noise_sd")
+  }
   if (!is.data.frame(metadata) || nrow(metadata) != EXPECTED_R ||
       length(setdiff(required_metadata, names(metadata))) ||
       !identical(as.integer(metadata$rep), seq_len(EXPECTED_R)) ||
       !is.list(metadata$pcm_D2_indices)) {
     stop("Incomplete adaptive metadata in: ", key, call. = FALSE)
+  }
+  if (input_schema %in% c(SCHEMA_V3, SCHEMA_V4) &&
+      (!is.numeric(metadata$outcome_noise_sd) ||
+       any(!is.finite(metadata$outcome_noise_sd)) ||
+       any(metadata$outcome_noise_sd <= 0))) {
+    stop("Invalid outcome-noise scales in: ", key, call. = FALSE)
   }
   invalid_seed <- vapply(seed_fields, function(field) {
     values <- metadata[[field]]
@@ -343,10 +572,12 @@ validate_record <- function(record, key) {
   invisible(TRUE)
 }
 
-if (!is.list(results) || length(results) != 60L || is.null(names(results)) ||
+if (!is.list(results) || length(results) != expected_n_setups ||
+    is.null(names(results)) ||
     anyNA(names(results)) || any(names(results) == "") ||
     anyDuplicated(names(results))) {
-  stop("The canonical CCLE result must contain 60 uniquely named setups.",
+  stop("The canonical CCLE result must contain ", expected_n_setups,
+       " uniquely named setups.",
        call. = FALSE)
 }
 invisible(Map(validate_record, results, names(results)))
@@ -371,34 +602,222 @@ s_values <- vapply(results, function(x) as.integer(x$s), integer(1L))
 sparsity_tags <- vapply(
   results, function(x) as.character(x$sparsity_tag), character(1L)
 )
-if (!identical(unname(sort(setup_ids)), seq_len(60L)) ||
+valid_tags <- c("low_sparsity", "medium_sparsity", "high_sparsity")
+if (!identical(unname(sort(setup_ids)), seq_len(expected_n_setups)) ||
     length(unique(targets)) != 30L ||
-    !identical(sort(unique(s_values)), c(5L, 10L)) ||
-    any(table(targets) != 2L) ||
-    any(table(s_values) != 30L) ||
-    any(table(targets, s_values) != 1L) ||
-    !setequal(
-      unique(sparsity_tags),
-      c("low_sparsity", "medium_sparsity", "high_sparsity")
-    ) ||
-    any(table(sparsity_tags) != 20L)) {
-  stop("The CCLE result does not match the canonical 30-target x 2-s grid.",
+    !setequal(unique(sparsity_tags), valid_tags)) {
+  stop("The CCLE result does not contain the canonical setup IDs, targets, and frequency bins.",
        call. = FALSE)
 }
-if (!all(c("CHIC2_MUT_s10", "PLK1_MUT_s10", "ATP11A_MUT_s10") %in%
+
+if (identical(input_schema, SCHEMA_V2)) {
+  if (!identical(sort(unique(s_values)), c(5L, 10L)) ||
+      any(table(targets) != 2L) ||
+      any(table(s_values) != 30L) ||
+      any(table(targets, s_values) != 1L) ||
+      any(table(sparsity_tags) != 20L)) {
+    stop("The matched-v2 result does not match the canonical 30-target x 2-s grid.",
+         call. = FALSE)
+  }
+  all_component_seeds <- unlist(lapply(results, function(record) {
+    unlist(record$replication_metadata[seed_fields], use.names = FALSE)
+  }), use.names = FALSE)
+  if (anyDuplicated(all_component_seeds)) {
+    stop("Seed streams overlap across the matched-v2 CCLE setups.",
+         call. = FALSE)
+  }
+  null_results <- results[s_values == EXPECTED_S]
+  alternative_results <- list()
+} else if (identical(input_schema, SCHEMA_V3)) {
+  hypotheses <- vapply(
+    results, function(x) as.character(x$hypothesis), character(1L)
+  )
+  target_indices <- vapply(
+    results, function(x) as.integer(x$target_idx), integer(1L)
+  )
+  if (!identical(unique(s_values), EXPECTED_S) ||
+      !setequal(unique(hypotheses), c("null", "alternative")) ||
+      any(table(hypotheses) != 30L) ||
+      any(table(targets) != 2L) ||
+      any(table(targets, hypotheses) != 1L) ||
+      !identical(unname(sort(unique(target_indices))), seq_len(30L)) ||
+      any(table(target_indices) != 2L) ||
+      any(table(sparsity_tags, hypotheses) != 10L)) {
+    stop("The matched-v3 result does not match the canonical paired 30-target s=10 design.",
+         call. = FALSE)
+  }
+  for (target_name in unique(targets)) {
+    pair <- results[targets == target_name]
+    null_record <- pair[[which(vapply(
+      pair, function(x) identical(x$hypothesis, "null"), logical(1L)
+    ))]]
+    alternative_record <- pair[[which(vapply(
+      pair, function(x) identical(x$hypothesis, "alternative"), logical(1L)
+    ))]]
+    paired_fields_match <-
+      identical(null_record$target_idx, alternative_record$target_idx) &&
+      identical(null_record$paired_seed_idx,
+                alternative_record$paired_seed_idx) &&
+      identical(null_record$sparsity_tag, alternative_record$sparsity_tag) &&
+      isTRUE(all.equal(null_record$freq, alternative_record$freq,
+                       tolerance = 0)) &&
+      identical(
+        null_record$replication_metadata[seed_fields],
+        alternative_record$replication_metadata[seed_fields]
+      ) &&
+      identical(
+        null_record$replication_metadata$pcm_D2_indices,
+        alternative_record$replication_metadata$pcm_D2_indices
+      ) &&
+      isTRUE(all.equal(
+        null_record$replication_metadata$outcome_noise_sd,
+        alternative_record$replication_metadata$outcome_noise_sd,
+        tolerance = 0
+      ))
+    if (!paired_fields_match) {
+      stop("Null/alternative pairing metadata disagree for target: ",
+           target_name, call. = FALSE)
+    }
+  }
+  null_results <- results[hypotheses == "null"]
+  alternative_results <- results[hypotheses == "alternative"]
+  unique_pair_seeds <- unlist(lapply(null_results, function(record) {
+    unlist(record$replication_metadata[seed_fields], use.names = FALSE)
+  }), use.names = FALSE)
+  if (anyDuplicated(unique_pair_seeds)) {
+    stop("Seed streams overlap across distinct matched-v3 target pairs.",
+         call. = FALSE)
+  }
+} else {
+  hypotheses <- vapply(
+    results, function(x) as.character(x$hypothesis), character(1L)
+  )
+  target_indices <- vapply(
+    results, function(x) as.integer(x$target_idx), integer(1L)
+  )
+  effect_indices <- vapply(
+    results, function(x) as.integer(x$effect_idx), integer(1L)
+  )
+  effect_ids <- vapply(
+    results, function(x) as.character(x$effect_id), character(1L)
+  )
+  effect_sizes <- vapply(
+    results, function(x) as.numeric(x$effect_size), numeric(1L)
+  )
+  if (!identical(unique(s_values), EXPECTED_S) ||
+      !setequal(unique(hypotheses), c("null", "alternative")) ||
+      sum(hypotheses == "null") != 30L ||
+      sum(hypotheses == "alternative") != 120L ||
+      any(table(targets) != length(EXPECTED_EFFECTS_V4)) ||
+      !identical(unname(sort(unique(target_indices))), seq_len(30L)) ||
+      any(table(target_indices) != length(EXPECTED_EFFECTS_V4)) ||
+      !identical(sort(unique(effect_indices)),
+                 seq_along(EXPECTED_EFFECTS_V4)) ||
+      any(table(effect_indices) != 30L) ||
+      !identical(unique(effect_ids[order(effect_indices)]),
+                 EXPECTED_EFFECT_IDS_V4) ||
+      !isTRUE(all.equal(
+        unique(effect_sizes[order(effect_indices)]), EXPECTED_EFFECTS_V4,
+        tolerance = 0
+      )) ||
+      any(table(targets, effect_ids) != 1L) ||
+      any(table(sparsity_tags, effect_ids) != 10L)) {
+    stop(
+      "The matched-v4 result does not match the canonical paired 30-target x 5-effect s=10 grid.",
+      call. = FALSE
+    )
+  }
+  for (target_name in unique(targets)) {
+    target_grid <- results[targets == target_name]
+    target_effect_indices <- vapply(
+      target_grid, function(x) as.integer(x$effect_idx), integer(1L)
+    )
+    target_grid <- target_grid[order(target_effect_indices)]
+    base_record <- target_grid[[1L]]
+    paired_fields_match <- vapply(target_grid[-1L], function(record) {
+      identical(base_record$target_idx, record$target_idx) &&
+        identical(base_record$paired_seed_idx, record$paired_seed_idx) &&
+        identical(base_record$sparsity_tag, record$sparsity_tag) &&
+        isTRUE(all.equal(base_record$freq, record$freq, tolerance = 0)) &&
+        identical(
+          base_record$replication_metadata[seed_fields],
+          record$replication_metadata[seed_fields]
+        ) &&
+        identical(
+          base_record$replication_metadata$pcm_D2_indices,
+          record$replication_metadata$pcm_D2_indices
+        ) &&
+        identical(
+          as.integer(base_record$replication_metadata$pcm_D1_n),
+          as.integer(record$replication_metadata$pcm_D1_n)
+        ) &&
+        identical(
+          as.integer(base_record$replication_metadata$pcm_D2_n),
+          as.integer(record$replication_metadata$pcm_D2_n)
+        ) &&
+        isTRUE(all.equal(
+          base_record$replication_metadata$outcome_noise_sd,
+          record$replication_metadata$outcome_noise_sd,
+          tolerance = 0
+        ))
+    }, logical(1L))
+    if (!all(paired_fields_match)) {
+      stop("Effect-grid pairing metadata disagree for target: ",
+           target_name, call. = FALSE)
+    }
+  }
+  null_results <- results[effect_sizes == 0]
+  alternative_results <- results[effect_sizes > 0]
+  effect_grid_results <- results
+  unique_pair_seeds <- unlist(lapply(null_results, function(record) {
+    unlist(record$replication_metadata[seed_fields], use.names = FALSE)
+  }), use.names = FALSE)
+  if (anyDuplicated(unique_pair_seeds)) {
+    stop("Seed streams overlap across distinct matched-v4 target grids.",
+         call. = FALSE)
+  }
+}
+
+if (!exists("effect_grid_results", inherits = FALSE)) {
+  effect_grid_results <- list()
+}
+
+# Normalize keys for the null-only plotting code below.  This also makes the
+# v2 fallback and preferred v3 artifact produce byte-for-byte comparable plot
+# selections whenever their null records agree.
+names(null_results) <- vapply(null_results, function(record) {
+  sprintf("%s_s%d", record$target, record$s)
+}, character(1L))
+if (length(alternative_results)) {
+  names(alternative_results) <- vapply(alternative_results, function(record) {
+    if (identical(input_schema, SCHEMA_V4)) {
+      sprintf("%s_%s_s%d", record$target, record$effect_id, record$s)
+    } else {
+      sprintf("%s_s%d", record$target, record$s)
+    }
+  }, character(1L))
+}
+results <- null_results
+
+if (length(results) != 30L ||
+    any(table(vapply(
+      results, function(x) as.character(x$sparsity_tag), character(1L)
+    )) != 10L) ||
+    !all(c("CHIC2_MUT_s10", "PLK1_MUT_s10", "ATP11A_MUT_s10") %in%
          names(results))) {
-  stop("The canonical representative CCLE setup keys are missing.",
+  stop("The canonical 30 s=10 null records or representative targets are missing.",
        call. = FALSE)
-}
-all_component_seeds <- unlist(lapply(results, function(record) {
-  unlist(record$replication_metadata[seed_fields], use.names = FALSE)
-}), use.names = FALSE)
-if (anyDuplicated(all_component_seeds)) {
-  stop("Seed streams overlap across the 60 CCLE setups.", call. = FALSE)
 }
 if (validate_only) {
-  cat("Validated matched-calibration v2 CCLE result: ", results_path, "\n",
+  cat("Validated ", input_schema, " CCLE result: ", results_path, "\n",
       sep = "")
+  cat("Validated 30 s=10 null records",
+      if (identical(input_schema, SCHEMA_V4)) {
+        " and the complete 30 x 5 paired effect grid"
+      } else if (length(alternative_results)) {
+        " and 30 paired alternative records"
+      } else "",
+      ".\n", sep = "")
   cat("Validated figure output directory: ", output_dir, "\n", sep = "")
   quit(save = "no", status = 0L)
 }
@@ -425,7 +844,7 @@ sparsity_labels <- c("low_sparsity"    = "High sparsity",
                      "high_sparsity"   = "Low sparsity")
 
 # ---------------------------------------------------------------------------
-# 1. Long-format rejection table for the 60-setup boxplot
+# 1. Long-format rejection table for the 30 s=10 null setups
 # ---------------------------------------------------------------------------
 rej_long <- bind_rows(lapply(results, function(r) {
   data.frame(target         = r$target,
@@ -768,7 +1187,7 @@ if (nrow(rej_chosen) != length(chosen_keys) * length(method_levels) ||
 }
 
 # ---------------------------------------------------------------------------
-# 6. Combined two-row figure: box (60 setups) on top, bars (3 setups) below.
+# 6. Combined two-row figure: 30 null setups on top, 3 setups below.
 #    Shared test-colour and calibration-linetype legends appear at the bottom;
 #    x-axis labels are omitted because the legends identify all procedures.
 # ---------------------------------------------------------------------------
@@ -906,7 +1325,243 @@ ggsave(combined_path, p_combined, width = 12, height = 7.8)
 cat("Saved: ", combined_path, "\n", sep = "")
 
 # ---------------------------------------------------------------------------
-# 7. Console summary
+# 7. Paired effect diagnostic (complete matched-v4 grid; v3 transitional arm).
+# ---------------------------------------------------------------------------
+if (identical(input_schema, SCHEMA_V4)) {
+  alternative_method_levels <- c("perm_gcm", "asym_gcm")
+  effect_grid_long <- bind_rows(lapply(effect_grid_results, function(record) {
+    data.frame(
+      target = record$target,
+      sparsity_tag = record$sparsity_tag,
+      freq = record$freq,
+      s = record$s,
+      effect_idx = record$effect_idx,
+      effect_id = record$effect_id,
+      effect_size = record$effect_size,
+      method = names(record$rejection_rate),
+      rejection_rate = unname(record$rejection_rate),
+      stringsAsFactors = FALSE
+    )
+  })) |>
+    filter(method %in% alternative_method_levels) |>
+    mutate(
+      method = factor(method, levels = alternative_method_levels),
+      method_label = factor(
+        unname(method_labels[as.character(method)]),
+        levels = unname(method_labels[alternative_method_levels])
+      ),
+      sparsity_tag = factor(
+        sparsity_tag,
+        levels = sparsity_levels,
+        labels = sparsity_labels[sparsity_levels]
+      )
+    ) |>
+    add_calibration_test_aesthetics()
+
+  if (nrow(effect_grid_long) !=
+        30L * length(EXPECTED_EFFECTS_V4) *
+          length(alternative_method_levels) ||
+      anyNA(effect_grid_long$method) ||
+      anyNA(effect_grid_long$method_label) ||
+      any(table(
+        effect_grid_long$sparsity_tag,
+        effect_grid_long$effect_size,
+        effect_grid_long$method
+      ) != 10L)) {
+    stop("The paired v4 GCM effect-grid diagnostic is incomplete.",
+         call. = FALSE)
+  }
+
+  effect_grid_summary <- effect_grid_long |>
+    group_by(sparsity_tag, effect_size, method, method_label,
+             test, calibration) |>
+    summarise(
+      rejection_rate = mean(rejection_rate),
+      n_targets = n(),
+      .groups = "drop"
+    )
+  if (nrow(effect_grid_summary) !=
+        3L * length(EXPECTED_EFFECTS_V4) *
+          length(alternative_method_levels) ||
+      any(effect_grid_summary$n_targets != 10L)) {
+    stop("Equal-target v4 sparsity-group aggregation failed.", call. = FALSE)
+  }
+
+  p_alternative <- ggplot(
+    effect_grid_summary,
+    aes(
+      x = effect_size,
+      y = rejection_rate,
+      colour = test,
+      linetype = calibration,
+      shape = calibration,
+      group = method_label
+    )
+  ) +
+    geom_hline(
+      yintercept = EXPECTED_ALPHA,
+      linetype = "dotted",
+      colour = "black",
+      linewidth = 0.55
+    ) +
+    geom_line(linewidth = 0.8) +
+    geom_point(size = 2.1, stroke = 0.7) +
+    facet_wrap(~ sparsity_tag, nrow = 1) +
+    scale_test_colour(guide = "none") +
+    scale_calibration_linetype() +
+    scale_x_continuous(breaks = EXPECTED_EFFECTS_V4) +
+    scale_y_continuous(
+      limits = c(0, 1),
+      breaks = seq(0, 1, by = 0.2),
+      expand = expansion(mult = c(0.01, 0.02))
+    ) +
+    labs(
+      title = "CCLE paired conditional-effect experiment",
+      subtitle = paste(
+        "s = 10; each point equally averages 10 target-level rejection rates;",
+        "nominal cutoff = 0.05"
+      ),
+      x = expression("Per-carrier shift " * delta * " (outcome-noise SD)"),
+      y = "Mean nominal-cutoff rejection rate",
+      caption = paste(
+        "GCM only. Curves show raw nominal-cutoff rejection, including",
+        "the null at delta = 0; they are not size-adjusted power curves."
+      )
+    ) +
+    guides(
+      linetype = guide_legend(order = 1),
+      shape = "none"
+    ) +
+    theme_figure3(base_size = 13) +
+    theme(
+      strip.text = element_text(face = "bold", size = 11),
+      legend.position = "bottom",
+      legend.box = "horizontal",
+      plot.title = element_text(face = "bold")
+    )
+
+  alternative_path <- file.path(
+    output_dir,
+    "ccle-alternative-synthY-30targets-rejection.pdf"
+  )
+  ggsave(alternative_path, p_alternative, width = 12, height = 4.8)
+  cat("Saved: ", alternative_path, "\n", sep = "")
+} else if (length(alternative_results)) {
+  alternative_method_levels <- c("perm_gcm", "asym_gcm")
+  alternative_long <- bind_rows(lapply(alternative_results, function(record) {
+    data.frame(
+      target = record$target,
+      sparsity_tag = record$sparsity_tag,
+      freq = record$freq,
+      s = record$s,
+      effect_size = record$effect_size,
+      method = names(record$rejection_rate),
+      rejection_rate = unname(record$rejection_rate),
+      stringsAsFactors = FALSE
+    )
+  })) |>
+    filter(method %in% alternative_method_levels) |>
+    mutate(
+      method = factor(method, levels = alternative_method_levels),
+      method_label = factor(
+        unname(method_labels[as.character(method)]),
+        levels = unname(method_labels[alternative_method_levels])
+      ),
+      sparsity_tag = factor(
+        sparsity_tag,
+        levels = sparsity_levels,
+        labels = sparsity_labels[sparsity_levels]
+      )
+    ) |>
+    add_calibration_test_aesthetics()
+
+  if (nrow(alternative_long) != 30L * length(alternative_method_levels) ||
+      anyNA(alternative_long$method) || anyNA(alternative_long$method_label) ||
+      any(alternative_long$effect_size != EXPECTED_ALT_EFFECT)) {
+    stop("The paired conditional-alternative diagnostic is incomplete.",
+         call. = FALSE)
+  }
+
+  p_alternative <- ggplot(
+    alternative_long,
+    aes(x = method_label, y = rejection_rate, fill = test)
+  ) +
+    geom_boxplot(
+      aes(linetype = calibration),
+      colour = "black",
+      width = 0.65,
+      linewidth = 0.55,
+      outlier.size = 0.8,
+      alpha = 0.85
+    ) +
+    geom_jitter(
+      aes(colour = test),
+      width = 0.12,
+      height = 0,
+      size = 0.7,
+      alpha = 0.65,
+      show.legend = FALSE
+    ) +
+    facet_wrap(~ sparsity_tag, nrow = 1) +
+    scale_test_fill() +
+    scale_test_colour(guide = "none") +
+    scale_calibration_linetype() +
+    scale_y_continuous(
+      limits = c(0, 1),
+      breaks = seq(0, 1, by = 0.2),
+      expand = expansion(mult = c(0.01, 0.02))
+    ) +
+    labs(
+      title = "CCLE paired conditional-alternative experiment",
+      subtitle = paste0(
+        "s = 10; per-carrier shift = ", EXPECTED_ALT_EFFECT,
+        " outcome-noise SD; nominal cutoff = 0.05"
+      ),
+      x = NULL,
+      y = "Rejection rate under conditional alternative",
+      caption = paste(
+        "GCM only. Null rejection rates are reported separately;",
+        "these rates are not size-adjusted."
+      )
+    ) +
+    guides(
+      fill = guide_legend(
+        nrow = 1,
+        byrow = TRUE,
+        order = 1,
+        override.aes = list(alpha = 1, colour = "black", linetype = "solid")
+      ),
+      linetype = guide_legend(
+        nrow = 1,
+        byrow = TRUE,
+        order = 2,
+        override.aes = list(fill = "white", colour = "black", alpha = 1)
+      )
+    ) +
+    theme_figure3(base_size = 13) +
+    theme(
+      strip.text = element_text(face = "bold", size = 11),
+      axis.text.x = element_text(size = 10, colour = "black"),
+      legend.position = "none",
+      legend.box = "horizontal",
+      plot.title = element_text(face = "bold")
+    )
+
+  alternative_path <- file.path(
+    output_dir,
+    "ccle-alternative-synthY-30targets-rejection.pdf"
+  )
+  ggsave(alternative_path, p_alternative, width = 12, height = 4.8)
+  cat("Saved: ", alternative_path, "\n", sep = "")
+} else {
+  cat(
+    "Skipped paired effect-rejection figure: the matched-v2 fallback contains null records only.\n",
+    sep = ""
+  )
+}
+
+# ---------------------------------------------------------------------------
+# 8. Console summary
 # ---------------------------------------------------------------------------
 cat("\n=== Setups per sparsity facet (one row per method) ===\n")
 print(n_setups_per_facet)
@@ -920,6 +1575,19 @@ rej_long |>
             max    = max(rejection_rate),
             .groups = "drop") |>
   print(n = Inf)
+
+if (identical(input_schema, SCHEMA_V4)) {
+  cat("\n=== Equal-target GCM nominal rejection by effect x sparsity ===\n")
+  effect_grid_summary |>
+    arrange(sparsity_tag, method_label, effect_size) |>
+    print(n = Inf)
+} else if (length(alternative_results)) {
+  cat("\n=== Transitional v3 GCM rejection under the alternative ===\n")
+  alternative_long |>
+    group_by(sparsity_tag, method_label) |>
+    summarise(mean = mean(rejection_rate), .groups = "drop") |>
+    print(n = Inf)
+}
 
 cat("\n=== Three chosen GCM-focused setups for the diagnostic ===\n")
 for (k in chosen_keys) {

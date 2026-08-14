@@ -1,23 +1,25 @@
 #!/usr/bin/env Rscript
 ###############################################################################
-# CCLE Semi-Synthetic Type I Error -- 30 targets x s in {5, 10}
+# CCLE Semi-Synthetic Effect-Grid Analysis -- 30 targets, s = 10
 #
 # Companion to ccle-typeI-synthY.R.  Whereas that script ran 3 hand-picked
-# targets at a single sparsity level (s = 5), this one sweeps a broader grid:
+# targets, this one runs a broader paired effect-grid simulation:
 #
 #   * 10 targets sampled from each frequency tercile of the screened mutations
 #     (low / medium / high sparsity)              ->  30 targets
-#   * active-set size s in {5, 10}                ->   2 s values
-#   * 30 x 2 = 60 setups, each with R = 500 reps
+#   * per-carrier effects in {0, .5, 1, 1.5, 2}   ->   5 effects
+#   * 30 x 5 = 150 setups, each with R = 500 reps
 #
-# The runner takes a single CLI integer arg in 1..60, the setup index into the
-# (target, s) grid (see SETUPS below), and writes one matched-v2 RDS file per
-# setup.  The legacy files are deliberately left untouched:
+# The runner takes one CLI integer in 1..150, indexing the effect-major SETUPS
+# grid below, and writes one matched-v4 RDS file per setup. All effects for a
+# target use the old matched-v2 s=10 seed index, pairing their generated
+# outcomes, splits, permutation streams, and RF streams. Legacy files are left
+# untouched:
 #
 #   $LOCAL_PDRT_DATA_DIR/ccle/
-#     ccle-typeI-synthY-30targets-matched-v2-results-{TARGET}-s{S}.rds
+#     ccle-typeI-synthY-30targets-matched-v4-results-{TARGET}-{EFFECT_ID}-s10.rds
 #
-# After all 60 jobs finish, run combine-ccle-results.R to merge.
+# After all 150 jobs finish, run combine-ccle-results.R to merge.
 ###############################################################################
 
 suppressPackageStartupMessages({
@@ -54,7 +56,17 @@ N_CORES   <- 1L
 ALTERNATIVE <- "two.sided"
 PCM_FRAC  <- 0.5
 RF_NUM_TREES <- 500L
-S_VALUES  <- c(5L, 10L)
+S_FIXED   <- 10L
+EFFECT_SCALE <- "noise_sd_equals_sd_mu"
+EFFECT_GRID <- data.frame(
+  effect_idx = seq_len(5L),
+  effect_id = c("delta0", "delta0p5", "delta1", "delta1p5", "delta2"),
+  effect_size = c(0, 0.5, 1, 1.5, 2),
+  stringsAsFactors = FALSE
+)
+EFFECT_GRID$hypothesis <- ifelse(
+  EFFECT_GRID$effect_size == 0, "null", "alternative"
+)
 N_PER_BIN <- 10L
 SAMPLE_SEED <- 2026L      # seed for tercile sampling (must be stable across jobs)
 RUN_SEED_BASE <- 20260000L # base for deterministic setup/rep/component seeds
@@ -125,19 +137,48 @@ TARGETS_DF <- rbind(
   data.frame(target = targets_high, tag = "high_sparsity",   stringsAsFactors = FALSE)
 )
 TARGETS_DF$freq <- freqs[TARGETS_DF$target]
+TARGETS_DF$target_idx <- seq_len(nrow(TARGETS_DF))
 
-## Setup grid: (target, s); ordered (all targets at s=5) then (all at s=10).
-SETUPS <- rbind(
-  cbind(TARGETS_DF, s = S_VALUES[1L]),
-  cbind(TARGETS_DF, s = S_VALUES[2L])
-)
+## Effect-major setup grid: all 30 targets at delta0, then all 30 at delta0p5,
+## and so on. The paired seed indices 31:60 are exactly the matched-v2 s=10
+## indices and are reused at every effect, preserving the old null streams.
+SETUPS <- do.call(rbind, lapply(seq_len(nrow(EFFECT_GRID)), function(i) {
+  effect <- EFFECT_GRID[i, , drop = FALSE]
+  transform(
+    TARGETS_DF,
+    effect_idx = effect$effect_idx,
+    effect_id = effect$effect_id,
+    effect_size = effect$effect_size,
+    hypothesis = effect$hypothesis,
+    effect_scale = EFFECT_SCALE,
+    s = S_FIXED,
+    paired_seed_idx = target_idx + nrow(TARGETS_DF)
+  )
+}))
 rownames(SETUPS) <- NULL
-N_SETUPS <- nrow(SETUPS)            # 60
+N_SETUPS <- nrow(SETUPS)            # 30 targets x 5 effects = 150
+stopifnot(
+  N_SETUPS == 150L,
+  identical(
+    as.integer(SETUPS$effect_idx), rep(EFFECT_GRID$effect_idx, each = 30L)
+  ),
+  identical(SETUPS$effect_id, rep(EFFECT_GRID$effect_id, each = 30L)),
+  identical(
+    as.numeric(SETUPS$effect_size), rep(EFFECT_GRID$effect_size, each = 30L)
+  ),
+  identical(
+    SETUPS$hypothesis, rep(EFFECT_GRID$hypothesis, each = 30L)
+  ),
+  identical(as.integer(SETUPS$target_idx), rep(seq_len(30L), 5L)),
+  identical(as.integer(SETUPS$paired_seed_idx), rep(31:60, 5L)),
+  all(as.integer(SETUPS$s) == S_FIXED),
+  all(SETUPS$effect_scale == EFFECT_SCALE)
+)
 
 cat(sprintf("Tercile cutoffs: q1/3 = %.4f, q2/3 = %.4f\n", qs[1], qs[2]))
 cat(sprintf("Pool sizes: low=%d, medium=%d, high=%d\n",
             length(pool_low), length(pool_med), length(pool_high)))
-cat(sprintf("Sampled %d targets per bin; %d total setups (target x s).\n",
+cat(sprintf("Sampled %d targets per bin; %d total setups (target x effect).\n",
             N_PER_BIN, N_SETUPS))
 
 # ---- 3. CLI: setup index 1..N_SETUPS ----
@@ -152,13 +193,27 @@ target <- SETUPS$target[setup_idx]
 tag    <- SETUPS$tag[setup_idx]
 s_j    <- as.integer(SETUPS$s[setup_idx])
 freq_j <- SETUPS$freq[setup_idx]
+target_idx <- as.integer(SETUPS$target_idx[setup_idx])
+effect_idx <- as.integer(SETUPS$effect_idx[setup_idx])
+effect_id <- SETUPS$effect_id[setup_idx]
+hypothesis <- SETUPS$hypothesis[setup_idx]
+effect_size <- as.numeric(SETUPS$effect_size[setup_idx])
+effect_scale <- SETUPS$effect_scale[setup_idx]
+paired_seed_idx <- as.integer(SETUPS$paired_seed_idx[setup_idx])
 
 stopifnot(target %in% mut_names)
-cat(sprintf("\n[Setup %d/%d]  target=%s  tag=%s  freq=%.4f  s=%d  R=%d\n",
-            setup_idx, N_SETUPS, target, tag, freq_j, s_j, R))
+cat(sprintf(
+  paste0(
+    "\n[Setup %d/%d]  target_idx=%d  target=%s  tag=%s  freq=%.4f  ",
+    "s=%d  effect_idx=%d  effect_id=%s  hypothesis=%s  ",
+    "effect_size=%.2f  paired_seed_idx=%d  R=%d\n"
+  ),
+  setup_idx, N_SETUPS, target_idx, target, tag, freq_j, s_j, effect_idx,
+  effect_id, hypothesis, effect_size, paired_seed_idx, R
+))
 
-# ---- 4. Synthetic Y generator (identical to ccle-typeI-synthY.R) ----
-generate_Y_synth <- function(Z, s) {
+# ---- 4. Paired synthetic-outcome generator ----
+generate_Y_components <- function(Z, s) {
   p <- ncol(Z)
   s <- max(1L, min(s, p))
   S <- sort(sample.int(p, size = s))
@@ -179,7 +234,11 @@ generate_Y_synth <- function(Z, s) {
   }
   sigma <- sd(mu)
   if (!is.finite(sigma) || sigma == 0) sigma <- 1
-  mu + rnorm(length(mu), mean = 0, sd = sigma)
+  list(
+    mu = mu,
+    eps = rnorm(length(mu), mean = 0, sd = sigma),
+    outcome_noise_sd = sigma
+  )
 }
 
 # ---- 5. One-rep dispatcher: one statistic, two calibrations per method ----
@@ -229,7 +288,7 @@ statistics <- matrix(
   dimnames = list(NULL, c("gcm", "pcm"))
 )
 
-seed_names <- names(ccle_seed_schedule(setup_idx, 1L, RUN_SEED_BASE))
+seed_names <- names(ccle_seed_schedule(paired_seed_idx, 1L, RUN_SEED_BASE))
 seed_metadata <- matrix(
   NA_integer_,
   nrow = R,
@@ -239,6 +298,7 @@ seed_metadata <- matrix(
 pcm_D2_indices <- vector("list", R)
 pcm_D1_n <- rep(NA_integer_, R)
 pcm_D2_n <- rep(NA_integer_, R)
+outcome_noise_sd <- rep(NA_real_, R)
 gcm_actual_B <- rep(NA_integer_, R)
 pcm_actual_B <- rep(NA_integer_, R)
 gcm_stop_reason <- rep(NA_character_, R)
@@ -258,15 +318,20 @@ pcm_adaptive_backend <- rep(NA_character_, R)
 
 t0 <- Sys.time()
 for (r in seq_len(R)) {
-  seeds <- ccle_seed_schedule(setup_idx, r, RUN_SEED_BASE)
+  seeds <- ccle_seed_schedule(paired_seed_idx, r, RUN_SEED_BASE)
   seed_metadata[r, ] <- seeds
 
   # Every random component has its own local stream.  Changing method order or
   # the number of permutations consumed by one method cannot affect another.
-  Y_syn <- ccle_with_seed(
+  # Every effect for a target reuses every stream; its Y values differ only by
+  # the deterministic carrier effect below.
+  outcome <- ccle_with_seed(
     seeds[["data_seed"]],
-    generate_Y_synth(Z_j, s_j)
+    generate_Y_components(Z_j, s_j)
   )
+  outcome_noise_sd[[r]] <- outcome$outcome_noise_sd
+  Y_syn <- outcome$mu + outcome$eps +
+    effect_size * outcome$outcome_noise_sd * X_j
   split_D2 <- ccle_make_pcm_split(
     n = n,
     split_seed = seeds[["pcm_split_seed"]],
@@ -294,7 +359,7 @@ for (r in seq_len(R)) {
     stop(
       sprintf(
         paste0(
-          "Matched-calibration replicate %d failed; no partial v2 result ",
+          "Matched-calibration replicate %d failed; no partial v4 result ",
           "will be saved. GCM error: %s; PCM error: %s"
         ),
         r,
@@ -352,6 +417,7 @@ cat("  Final rejection rates:\n"); print(round(rej, 3))
 replication_metadata <- data.frame(
   rep = seq_len(R),
   as.data.frame(seed_metadata, optional = TRUE),
+  outcome_noise_sd = outcome_noise_sd,
   pcm_D1_n = pcm_D1_n,
   pcm_D2_n = pcm_D2_n,
   gcm_actual_B = gcm_actual_B,
@@ -382,7 +448,7 @@ all_replicates_matched <-
   all(is.finite(pvals)) &&
   all(is.finite(statistics))
 if (!all_replicates_matched) {
-  stop("Refusing to save an incomplete or unmatched v2 result", call. = FALSE)
+  stop("Refusing to save an incomplete or unmatched v4 result", call. = FALSE)
 }
 
 package_versions <- c(
@@ -393,13 +459,21 @@ package_versions <- c(
 )
 
 result <- list(
-  schema_version  = "ccle_synthy_matched_v2",
+  schema_version  = "ccle_synthy_matched_v4",
+  simulation_design = "paired_effect_grid_s10",
   calibration_design = "shared_observed_statistic",
   setup_idx      = setup_idx,
+  target_idx     = target_idx,
+  paired_seed_idx = paired_seed_idx,
   target         = target,
   sparsity_tag   = tag,
   freq           = freq_j,
   s              = s_j,
+  effect_idx     = effect_idx,
+  effect_id      = effect_id,
+  hypothesis     = hypothesis,
+  effect_size    = effect_size,
+  effect_scale   = effect_scale,
   R              = R,
   B_requested    = B_MAX,
   B_max          = B_MAX,
@@ -433,7 +507,10 @@ result <- list(
     ),
     seed_schedule = list(
       base = RUN_SEED_BASE,
-      formula = "base + setup_idx * 100000 + rep * 100 + component_offset",
+      formula = "base + paired_seed_idx * 100000 + rep * 100 + component_offset",
+      schedule_index = "paired_seed_idx = target_idx + 30",
+      setup_order = "effect_major_then_target",
+      paired_across_effect_sizes = TRUE,
       component_offsets = CCLE_SEED_COMPONENT_OFFSETS
     )
   ),
@@ -444,9 +521,9 @@ result <- list(
 
 out_file <- file.path(bpath,
   sprintf(
-    "ccle-typeI-synthY-30targets-matched-v2-results-%s-s%d.rds",
+    "ccle-typeI-synthY-30targets-matched-v4-results-%s-%s-s10.rds",
     target,
-    s_j
+    effect_id
   ))
 tmp_file <- tempfile(
   pattern = paste0(basename(out_file), ".tmp-"),
@@ -455,7 +532,7 @@ tmp_file <- tempfile(
 on.exit(unlink(tmp_file), add = TRUE)
 saveRDS(list(result), tmp_file)
 if (!file.rename(tmp_file, out_file)) {
-  stop("Failed to atomically move v2 result into place: ", out_file,
+  stop("Failed to atomically move v4 result into place: ", out_file,
        call. = FALSE)
 }
 cat("\nSaved:\n   ", out_file, "\n")

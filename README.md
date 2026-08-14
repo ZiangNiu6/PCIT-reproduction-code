@@ -97,8 +97,9 @@ requires all 27,000 matched outputs before it can replace the manuscript
 figure. Legacy `pcm-additive` results are never accepted by this plotter.
 
 The complete CCLE workflow runs locally by default. It first runs a small,
-data-independent matched-calibration smoke test, then runs all 60 setups,
-strictly combines them, and regenerates the figures. The domain-level
+data-independent matched-calibration smoke test, then runs the 30 targets over
+five paired effects at `s = 10` (150 target/effect jobs), strictly combines
+them, and regenerates the figures. The domain-level
 `submit-ccle.sh` supports asynchronous SGE submission for the full rerun; see
 the CCLE instructions below. The complete Frangieh workflow requires an SGE
 cluster and the processed `ondisc` data. The `plot-only` workflows require
@@ -106,10 +107,10 @@ only the corresponding saved result files. Supplying fewer than 20 Frangieh
 replicates is useful for a cluster test, but the postprocessor deliberately
 requires replicate IDs 1--20 before it will overwrite manuscript figures.
 
-## CCLE matched-calibration v2
+## CCLE paired effect-grid matched calibration (v4)
 
-The corrected CCLE analysis uses the result namespace
-`ccle-typeI-synthY-30targets-matched-v2`. Within each GCM or PCM pair, normal
+The CCLE analysis uses the result namespace
+`ccle-typeI-synthY-30targets-matched-v4`. Within each GCM or PCM pair, normal
 and permutation calibration are applied to the same observed statistic. They
 therefore share the same synthetic response, nuisance fits, and, for PCM, the
 same sample split and learned direction; the pair differs only in its
@@ -123,12 +124,41 @@ order does not alter later responses, splits, or nuisance fits. Each per-setup
 RDS records the schema and provenance needed by the combiner to verify this
 contract.
 
-The v2 filenames deliberately differ from the legacy unmatched filenames.
-The v2 combiner and plotter accept only the matched-v2 schema, so old results
-cannot be silently mixed into the corrected figures. Per-setup results and
-the combined result are written under `$LOCAL_PDRT_DATA_DIR/ccle`; the
-combined file is
-`ccle-typeI-synthY-30targets-matched-v2-results.rds`.
+The v4 design fixes the synthetic-response active-set size at `s = 10`. For
+each of the 30 mutation targets it pairs the five effects
+`delta = 0, 0.5, 1, 1.5, 2` using identical active sets, coefficients, Gaussian
+noise, PCM splits, permutation streams, and learner streams. If `sigma` is the
+synthetic-outcome noise standard deviation, the outcomes are
+
+```text
+Y^(delta) = mu(Z) + epsilon + delta * sigma * X_j
+delta in {0, 0.5, 1, 1.5, 2}
+```
+
+Thus each nonzero effect is a `delta`-noise-SD per-carrier shift and differs
+from its paired null only through the added target effect. The binary target is
+not variance-standardized, avoiding implausibly large effects for one-carrier
+mutations. The 30 `delta = 0` jobs deliberately reuse the old matched-v2
+`s = 10` random-number streams, so existing and new null results can be checked
+exactly.
+
+The v4 filenames deliberately differ from legacy unmatched, matched-v2, and
+matched-v3 filenames. Per-setup files use
+`ccle-typeI-synthY-30targets-matched-v4-results-{TARGET}-{EFFECT_ID}-s10.rds`,
+where `EFFECT_ID` is one of `delta0`, `delta0p5`, `delta1`, `delta1p5`, or
+`delta2`. The v4 combiner accepts only the complete paired v4 schema, so older
+results cannot be silently mixed into the effect-grid analysis. Per-setup and
+combined results are written under `$LOCAL_PDRT_DATA_DIR/ccle`; the combined
+files are
+`ccle-typeI-synthY-30targets-matched-v4-results.rds` and
+`ccle-typeI-synthY-30targets-matched-v4-rejection-rates.csv`.
+
+For figure-only reproduction during the transition, set
+`CCLE_RESULTS_SCHEMA=auto|v4|v3|v2`. The default `auto` uses the first available
+artifact in the strict priority `v4 > v3 > v2`; an explicit value requires that
+exact artifact. V3 produces its single-effect transitional diagnostic, while
+v2 retains only its 30 `s = 10` null records and skips the effect diagnostic.
+The plotter never accepts unmatched legacy results.
 
 For a local full rerun, use
 
@@ -152,15 +182,92 @@ root, where the project's `.Rprofile` activates `renv`. The launcher
 deliberately avoids `qsub -V` and does not forward the full login environment.
 The configured paths must be visible at the same location on every compute
 node. `PROJECT` and `MEM` optionally override the SGE project and per-job
-memory request. After all 60 jobs have finished successfully, run
+memory request. After all 150 jobs have finished successfully, run
 
 ```bash
 ./run_all_semi_synthetic.sh plot-only
 ```
 
-If the matched-v2 combined RDS is absent, `plot-only` strictly validates and
-combines all 60 per-setup files before plotting. If it is already present,
-the plotter validates and uses it. Legacy combined results are ignored.
+If the matched-v4 combined RDS is absent but any matched-v4 per-setup output
+exists, `plot-only` strictly requires and combines all 150 setup files; it never
+silently falls back after a partial v4 run. With a complete v4 artifact, the
+plotter validates the exact 30-by-5 grid and within-target pairing, uses only
+`delta = 0` for the unchanged null-calibration figures, and writes
+`ccle-alternative-synthY-30targets-rejection.pdf`. That GCM-only diagnostic
+first computes each target's rejection rate, then averages the 10 targets
+equally within each correctly relabeled mutation-sparsity group. It displays
+raw rejection at the nominal `0.05` cutoff over `delta`, including the null;
+because the methods can have different null rejection rates, it is not a
+size-adjusted power curve. Unmatched legacy combined results are ignored.
+
+## CCLE asymptotic-GCM effect-grid pilot
+
+The standalone effect-grid pilot is for choosing a production alternative;
+its estimates are selection-only and are not accepted by the matched-v4
+combiner or plotter. It keeps the 30 paper targets and `s = 10`, uses the
+independent seed base `30260000`, and evaluates the paired per-carrier effects
+`0, 0.25, 0.5, 0.75, 1, 1.25, 1.5, 2`. Within every target and replicate it
+generates the outcome components once, caches one `X | Z` random forest across
+all eight effects, and fits only `Y | Z` separately for each effect. Each target
+artifact includes an exact comparison of the cached public-`ranger` statistic
+against `pcmt::perm_gcm(B = 1)` from its initial run.
+
+The eight-effect runner uses schema `ccle_asym_gcm_effect_pilot_v3`. If its
+target-specific RDS/CSV pair is a strictly valid prefix artifact—either the
+six-effect v1 grid ending at `1.25` or the seven-effect v2 grid ending at
+`1.5`—it retains those rows, regenerates and checks the paired outcome
+components and cached `X | Z` fit for every replicate, strictly revalidates the
+original preflight, computes only the missing suffix, and transactionally
+upgrades the same files. A valid
+eight-effect v3 pair is skipped. Missing, mismatched, or malformed artifact
+pairs fail closed and are not overwritten; a target with no artifacts runs all
+eight effects.
+
+The runner accepts one target, comma-separated targets, inclusive `:` or `-`
+ranges, or `all`. For example, two long-lived local processes avoid reloading
+the CCLE inputs for every target:
+
+```bash
+source ~/.research_config
+export PILOT_R=25 PILOT_RF_TREES=500 PILOT_RF_THREADS=4
+Rscript reproduction-code/semi-synthetic-analysis/pilot-ccle-asym-gcm-effect-grid.R 1:15 &
+Rscript reproduction-code/semi-synthetic-analysis/pilot-ccle-asym-gcm-effect-grid.R 16:30 &
+wait
+Rscript reproduction-code/semi-synthetic-analysis/combine-pilot-ccle-asym-gcm-effect-grid.R
+```
+
+`PILOT_OUTPUT_DIR` optionally overrides the default
+`$LOCAL_PDRT_DATA_DIR/ccle/pilot-asym-gcm-grid`. The runner writes one atomic
+RDS/CSV pair per target, with filenames recording target index, mutation,
+replicate count, and tree count. After all 30 matching target files exist, the
+combiner transactionally publishes a combined RDS, an equal-target summary
+CSV, and a target-level summary CSV named from `R` and the tree count. The
+summaries contain nominal rejection rates, paired gains over effect zero, and Monte
+Carlo standard errors; the combined RDS also retains validated raw rows and
+full method, seed, preflight, and package provenance.
+
+The pilot considered all eight candidates independently of the production
+replicates. Its equal-target summaries were used to retain a null anchor and a
+spaced weak-to-large-signal progression that remains informative after
+grouping targets by mutation sparsity. The selected production grid is
+`0, 0.5, 1, 1.5, 2`; the intermediate pilot-only effects `0.25, 0.75, 1.25`
+are not run in v4. Production plots show both asymptotic and permutation GCM,
+whereas the asymptotic-only pilot itself is never presented as confirmatory
+power evidence.
+
+For auditability, the `R = 25` selection-only equal-target asymptotic-GCM
+nominal rejection rates were:
+
+| Displayed sparsity group | 0 | 0.25 | 0.5 | 0.75 | 1 | 1.25 | 1.5 | 2 |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| High sparsity (rare) | .004 | .008 | .028 | .032 | .044 | .052 | .072 | .120 |
+| Medium sparsity | .040 | .080 | .172 | .284 | .388 | .572 | .704 | .864 |
+| Low sparsity (common) | .044 | .104 | .252 | .468 | .668 | .812 | .928 | .976 |
+
+The stored pilot tags describe mutation-frequency terciles, so the plot and
+table intentionally invert the extreme labels: internal `low_sparsity` means
+rare mutations and is displayed as high sparsity, while internal
+`high_sparsity` means common mutations and is displayed as low sparsity.
 
 The corrected Frangieh workflow uses schema
 `perturb_score5_v2_nonpositive_nulls`; legacy v1 results are not accepted as

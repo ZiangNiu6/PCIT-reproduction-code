@@ -34,8 +34,9 @@ ccle_seed_schedule <- function(setup_idx, rep_idx, seed_base = 20260000L) {
   }
 
   # A 100-seed block is reserved for every replicate, and a 100,000-seed
-  # block for every setup.  The current design (60 setups x 500 replicates)
-  # therefore has disjoint streams with ample room for additional components.
+  # block for every seed-schedule index. Distinct indices therefore have
+  # disjoint streams, while callers may deliberately reuse an index to pair
+  # related simulation setups component by component.
   seeds <- as.double(seed_base) +
     as.double(setup_idx) * 100000 +
     as.double(rep_idx) * 100 +

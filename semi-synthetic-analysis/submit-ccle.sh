@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Run or submit the 60 matched-calibration v2 CCLE target/sparsity setups.
+# Run or submit 150 matched-v4 CCLE target/effect jobs.
 #
 # Usage:
 #   bash reproduction-code/semi-synthetic-analysis/submit-ccle.sh
@@ -10,13 +10,13 @@
 # --local runs each setup synchronously. It is used by the repository-level
 # full runner so combining and plotting begin only after computation succeeds.
 # --sge submits independent Grid Engine jobs and returns after submission. The
-# jobs write only the matched-v2 per-setup namespace; after they finish, use
+# jobs write only the matched-v4 per-setup namespace; after they finish, use
 # the repository-level plot-only workflow to combine and plot those results.
 #
 # Optional environment variables for --sge:
 #   PROJECT    SGE project (default: stat_bhaswar_team)
 #   MEM        m_mem_free request (default: 8G)
-#   N_SETUPS   number of setup indices to dispatch (default: 60)
+#   N_SETUPS   number of setup indices to dispatch (default: 150)
 
 set -euo pipefail
 
@@ -66,6 +66,7 @@ if [[ "$data_root" != "/" ]]; then
   data_root=${data_root%/}
 fi
 export LOCAL_PDRT_DATA_DIR="$data_root"
+export RENV_CONFIG_SANDBOX_ENABLED=FALSE
 
 ccle_dir="$data_root/ccle"
 for input_file in mutation.txt response.csv; do
@@ -75,9 +76,9 @@ for input_file in mutation.txt response.csv; do
   fi
 done
 
-n_setups=${N_SETUPS:-60}
-if [[ ! "$n_setups" =~ ^[1-9][0-9]*$ ]] || (( n_setups > 60 )); then
-  echo "ERROR: N_SETUPS must be an integer from 1 through 60." >&2
+n_setups=${N_SETUPS:-150}
+if [[ ! "$n_setups" =~ ^[1-9][0-9]*$ ]] || (( n_setups > 150 )); then
+  echo "ERROR: N_SETUPS must be an integer from 1 through 150." >&2
   exit 2
 fi
 
@@ -96,7 +97,7 @@ rscript_bin=$(command -v Rscript)
 # the path automatically. Only the required data path is embedded in the job.
 echo "Project root:        $project_root"
 echo "Runner script:       $runner"
-echo "Result namespace:    matched-v2"
+echo "Result namespace:    matched-v4-effect-grid-s10"
 echo "Number of setups:    $n_setups"
 echo "LOCAL_PDRT_DATA_DIR: $data_root"
 echo "Rscript:             $rscript_bin"
@@ -122,7 +123,7 @@ echo "SGE project:         $sge_project"
 echo "Memory per job:      $memory"
 
 for ((setup_idx = 1; setup_idx <= n_setups; setup_idx++)); do
-  job_name="ccle_matched_v2_${setup_idx}"
+  job_name="ccle_matched_v4_${setup_idx}"
   printf -v job_body \
     '#!/usr/bin/env bash\nset -euo pipefail\nexport LOCAL_PDRT_DATA_DIR=%q\nexport RENV_CONFIG_SANDBOX_ENABLED=FALSE\ncd -- %q\nexec %q %q %q\n' \
     "$data_root" "$project_root" "$rscript_bin" "$runner" "$setup_idx"
@@ -135,5 +136,5 @@ done
 
 echo "Submitted $n_setups CCLE setup job(s)."
 echo "After they finish, run: ./run_all_semi_synthetic.sh plot-only"
-echo "If the matched-v2 combined result is absent, the root runner will"
-echo "strictly validate and combine all 60 matched-v2 setup files before plotting."
+echo "If the matched-v4 combined result is absent, the root runner will"
+echo "strictly validate and combine all 150 matched-v4 setup files before plotting."
