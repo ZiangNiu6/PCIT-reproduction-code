@@ -1,25 +1,28 @@
 #!/usr/bin/env Rscript
 ###############################################################################
-# CCLE Semi-Synthetic Effect-Grid Analysis -- 30 targets, s = 10
+# CCLE Semi-Synthetic Representative Power Analysis -- s = 10
 #
 # Companion to ccle-typeI-synthY.R.  Whereas that script ran 3 hand-picked
-# targets, this one runs a broader paired effect-grid simulation:
+# targets, this one combines the full null sweep with paired alternatives on
+# one preselected representative per sparsity group:
 #
 #   * 10 targets sampled from each frequency tercile of the screened mutations
-#     (low / medium / high sparsity)              ->  30 targets
-#   * per-carrier effects in {0, .5, 1, 1.5, 2}   ->   5 effects
-#   * 30 x 5 = 150 setups, each with R = 500 reps
+#     (low / medium / high sparsity) at delta = 0 ->  30 null setups
+#   * RIOK3_MUT effects in {1, 2, 3, 4}           ->   4 alternatives
+#   * PLK1_MUT and ATP11A_MUT effects in
+#     {.5, 1, 1.5, 2}                             ->   8 alternatives
+#   * 30 + 12 = 42 setups, each with R = 500 reps
 #
-# The runner takes one CLI integer in 1..150, indexing the effect-major SETUPS
-# grid below, and writes one matched-v4 RDS file per setup. All effects for a
-# target use the old matched-v2 s=10 seed index, pairing their generated
-# outcomes, splits, permutation streams, and RF streams. Legacy files are left
-# untouched:
+# The runner takes one CLI integer in 1..42. Setups 1:30 are the complete null
+# sweep in the old target order. Setups 31:42 are ordered by within-target grid
+# index, then RIOK3_MUT / PLK1_MUT / ATP11A_MUT. All effects for a target use
+# the old matched-v2 s=10 seed index, pairing their generated outcomes, splits,
+# permutation streams, and RF streams. Legacy files are left untouched:
 #
 #   $LOCAL_PDRT_DATA_DIR/ccle/
 #     ccle-typeI-synthY-30targets-matched-v4-results-{TARGET}-{EFFECT_ID}-s10.rds
 #
-# After all 150 jobs finish, run combine-ccle-results.R to merge.
+# After all 42 jobs finish, run combine-ccle-results.R to merge.
 ###############################################################################
 
 suppressPackageStartupMessages({
@@ -58,15 +61,26 @@ PCM_FRAC  <- 0.5
 RF_NUM_TREES <- 500L
 S_FIXED   <- 10L
 EFFECT_SCALE <- "noise_sd_equals_sd_mu"
-EFFECT_GRID <- data.frame(
-  effect_idx = seq_len(5L),
-  effect_id = c("delta0", "delta0p5", "delta1", "delta1p5", "delta2"),
-  effect_size = c(0, 0.5, 1, 1.5, 2),
+EFFECT_LOOKUP <- data.frame(
+  effect_id = c(
+    "delta0", "delta0p5", "delta1", "delta1p5", "delta2", "delta3", "delta4"
+  ),
+  effect_size = c(0, 0.5, 1, 1.5, 2, 3, 4),
   stringsAsFactors = FALSE
 )
-EFFECT_GRID$hypothesis <- ifelse(
-  EFFECT_GRID$effect_size == 0, "null", "alternative"
+REPRESENTATIVE_TARGETS <- data.frame(
+  representative_order = seq_len(3L),
+  target = c("RIOK3_MUT", "PLK1_MUT", "ATP11A_MUT"),
+  expected_tag = c("low_sparsity", "medium_sparsity", "high_sparsity"),
+  expected_target_idx = c(9L, 15L, 22L),
+  stringsAsFactors = FALSE
 )
+REPRESENTATIVE_EFFECT_SIZES <- rbind(
+  RIOK3_MUT = c(0, 1, 2, 3, 4),
+  PLK1_MUT = c(0, 0.5, 1, 1.5, 2),
+  ATP11A_MUT = c(0, 0.5, 1, 1.5, 2)
+)
+colnames(REPRESENTATIVE_EFFECT_SIZES) <- paste0("grid", seq_len(5L))
 N_PER_BIN <- 10L
 SAMPLE_SEED <- 2026L      # seed for tercile sampling (must be stable across jobs)
 RUN_SEED_BASE <- 20260000L # base for deterministic setup/rep/component seeds
@@ -139,38 +153,109 @@ TARGETS_DF <- rbind(
 TARGETS_DF$freq <- freqs[TARGETS_DF$target]
 TARGETS_DF$target_idx <- seq_len(nrow(TARGETS_DF))
 
-## Effect-major setup grid: all 30 targets at delta0, then all 30 at delta0p5,
-## and so on. The paired seed indices 31:60 are exactly the matched-v2 s=10
-## indices and are reused at every effect, preserving the old null streams.
-SETUPS <- do.call(rbind, lapply(seq_len(nrow(EFFECT_GRID)), function(i) {
-  effect <- EFFECT_GRID[i, , drop = FALSE]
+representative_idx <- match(REPRESENTATIVE_TARGETS$target, TARGETS_DF$target)
+if (anyNA(representative_idx)) {
+  stop(
+    "The preselected representative target(s) are absent from the sampled grid: ",
+    paste(REPRESENTATIVE_TARGETS$target[is.na(representative_idx)], collapse = ", "),
+    call. = FALSE
+  )
+}
+REPRESENTATIVES_DF <- TARGETS_DF[representative_idx, , drop = FALSE]
+REPRESENTATIVES_DF$representative_order <-
+  REPRESENTATIVE_TARGETS$representative_order
+if (!identical(REPRESENTATIVES_DF$target, REPRESENTATIVE_TARGETS$target) ||
+    !identical(REPRESENTATIVES_DF$tag, REPRESENTATIVE_TARGETS$expected_tag) ||
+    !identical(
+      as.integer(REPRESENTATIVES_DF$target_idx),
+      REPRESENTATIVE_TARGETS$expected_target_idx
+    )) {
+  stop(
+    paste(
+      "The preselected representatives do not match the expected sparsity",
+      "groups and canonical target indices."
+    ),
+    call. = FALSE
+  )
+}
+
+effect_id_for_size <- function(effect_size) {
+  idx <- match(effect_size, EFFECT_LOOKUP$effect_size)
+  if (anyNA(idx)) {
+    stop("An effect size is absent from EFFECT_LOOKUP.", call. = FALSE)
+  }
+  EFFECT_LOOKUP$effect_id[idx]
+}
+
+## Preserve all 30 old s=10 null streams first. Then append nonzero effects in
+## within-target grid-index-major order, with representatives displayed from
+## high sparsity (rare) to low sparsity (common). Paired seed indices 31:60 are
+## target-specific and therefore identical to the matched-v2 null schedule.
+SETUPS_NULL <- transform(
+  TARGETS_DF,
+  grid_idx = 1L,
+  effect_id = "delta0",
+  effect_size = 0,
+  hypothesis = "null",
+  effect_scale = EFFECT_SCALE,
+  s = S_FIXED,
+  paired_seed_idx = target_idx + nrow(TARGETS_DF)
+)
+SETUPS_ALT <- do.call(rbind, lapply(2:5, function(grid_idx) {
+  effect_size <- as.numeric(
+    REPRESENTATIVE_EFFECT_SIZES[REPRESENTATIVES_DF$target, grid_idx]
+  )
   transform(
-    TARGETS_DF,
-    effect_idx = effect$effect_idx,
-    effect_id = effect$effect_id,
-    effect_size = effect$effect_size,
-    hypothesis = effect$hypothesis,
+    REPRESENTATIVES_DF,
+    grid_idx = as.integer(grid_idx),
+    effect_id = effect_id_for_size(effect_size),
+    effect_size = effect_size,
+    hypothesis = "alternative",
     effect_scale = EFFECT_SCALE,
     s = S_FIXED,
     paired_seed_idx = target_idx + nrow(TARGETS_DF)
   )
 }))
+SETUPS <- rbind(
+  SETUPS_NULL,
+  SETUPS_ALT[, names(SETUPS_NULL), drop = FALSE]
+)
 rownames(SETUPS) <- NULL
-N_SETUPS <- nrow(SETUPS)            # 30 targets x 5 effects = 150
+N_SETUPS <- nrow(SETUPS)            # 30 nulls + 3 representatives x 4 alternatives
 stopifnot(
-  N_SETUPS == 150L,
+  N_SETUPS == 42L,
+  identical(as.integer(SETUPS$grid_idx), c(rep(1L, 30L), rep(2:5, each = 3L))),
+  identical(SETUPS$target[1:30], TARGETS_DF$target),
+  identical(SETUPS$effect_id[1:30], rep("delta0", 30L)),
+  identical(as.numeric(SETUPS$effect_size[1:30]), rep(0, 30L)),
+  identical(SETUPS$hypothesis[1:30], rep("null", 30L)),
   identical(
-    as.integer(SETUPS$effect_idx), rep(EFFECT_GRID$effect_idx, each = 30L)
-  ),
-  identical(SETUPS$effect_id, rep(EFFECT_GRID$effect_id, each = 30L)),
-  identical(
-    as.numeric(SETUPS$effect_size), rep(EFFECT_GRID$effect_size, each = 30L)
+    SETUPS$target[31:42], rep(REPRESENTATIVE_TARGETS$target, 4L)
   ),
   identical(
-    SETUPS$hypothesis, rep(EFFECT_GRID$hypothesis, each = 30L)
+    SETUPS$tag[31:42], rep(REPRESENTATIVE_TARGETS$expected_tag, 4L)
   ),
-  identical(as.integer(SETUPS$target_idx), rep(seq_len(30L), 5L)),
-  identical(as.integer(SETUPS$paired_seed_idx), rep(31:60, 5L)),
+  identical(
+    as.integer(SETUPS$target_idx[31:42]), rep(representative_idx, 4L)
+  ),
+  identical(as.integer(representative_idx), c(9L, 15L, 22L)),
+  identical(
+    as.numeric(SETUPS$effect_size[31:42]),
+    as.numeric(REPRESENTATIVE_EFFECT_SIZES[, 2:5, drop = FALSE])
+  ),
+  identical(
+    SETUPS$effect_id[31:42], effect_id_for_size(SETUPS$effect_size[31:42])
+  ),
+  identical(SETUPS$hypothesis[31:42], rep("alternative", 12L)),
+  identical(as.integer(SETUPS$paired_seed_idx[1:30]), 31:60),
+  identical(
+    as.integer(SETUPS$paired_seed_idx[31:42]),
+    rep(representative_idx + 30L, 4L)
+  ),
+  identical(
+    as.integer(SETUPS$paired_seed_idx[seq(31L, 42L, by = 3L)]),
+    rep(39L, 4L)
+  ),
   all(as.integer(SETUPS$s) == S_FIXED),
   all(SETUPS$effect_scale == EFFECT_SCALE)
 )
@@ -178,7 +263,7 @@ stopifnot(
 cat(sprintf("Tercile cutoffs: q1/3 = %.4f, q2/3 = %.4f\n", qs[1], qs[2]))
 cat(sprintf("Pool sizes: low=%d, medium=%d, high=%d\n",
             length(pool_low), length(pool_med), length(pool_high)))
-cat(sprintf("Sampled %d targets per bin; %d total setups (target x effect).\n",
+cat(sprintf("Sampled %d targets per bin; %d total null/representative setups.\n",
             N_PER_BIN, N_SETUPS))
 
 # ---- 3. CLI: setup index 1..N_SETUPS ----
@@ -194,7 +279,7 @@ tag    <- SETUPS$tag[setup_idx]
 s_j    <- as.integer(SETUPS$s[setup_idx])
 freq_j <- SETUPS$freq[setup_idx]
 target_idx <- as.integer(SETUPS$target_idx[setup_idx])
-effect_idx <- as.integer(SETUPS$effect_idx[setup_idx])
+grid_idx <- as.integer(SETUPS$grid_idx[setup_idx])
 effect_id <- SETUPS$effect_id[setup_idx]
 hypothesis <- SETUPS$hypothesis[setup_idx]
 effect_size <- as.numeric(SETUPS$effect_size[setup_idx])
@@ -205,10 +290,10 @@ stopifnot(target %in% mut_names)
 cat(sprintf(
   paste0(
     "\n[Setup %d/%d]  target_idx=%d  target=%s  tag=%s  freq=%.4f  ",
-    "s=%d  effect_idx=%d  effect_id=%s  hypothesis=%s  ",
+    "s=%d  grid_idx=%d  effect_id=%s  hypothesis=%s  ",
     "effect_size=%.2f  paired_seed_idx=%d  R=%d\n"
   ),
-  setup_idx, N_SETUPS, target_idx, target, tag, freq_j, s_j, effect_idx,
+  setup_idx, N_SETUPS, target_idx, target, tag, freq_j, s_j, grid_idx,
   effect_id, hypothesis, effect_size, paired_seed_idx, R
 ))
 
@@ -460,7 +545,7 @@ package_versions <- c(
 
 result <- list(
   schema_version  = "ccle_synthy_matched_v4",
-  simulation_design = "paired_effect_grid_s10",
+  simulation_design = "representative_effect_grid_s10",
   calibration_design = "shared_observed_statistic",
   setup_idx      = setup_idx,
   target_idx     = target_idx,
@@ -469,7 +554,7 @@ result <- list(
   sparsity_tag   = tag,
   freq           = freq_j,
   s              = s_j,
-  effect_idx     = effect_idx,
+  grid_idx       = grid_idx,
   effect_id      = effect_id,
   hypothesis     = hypothesis,
   effect_size    = effect_size,
@@ -509,7 +594,7 @@ result <- list(
       base = RUN_SEED_BASE,
       formula = "base + paired_seed_idx * 100000 + rep * 100 + component_offset",
       schedule_index = "paired_seed_idx = target_idx + 30",
-      setup_order = "effect_major_then_target",
+      setup_order = "null_all_targets_then_grid_index_major_representatives",
       paired_across_effect_sizes = TRUE,
       component_offsets = CCLE_SEED_COMPONENT_OFFSETS
     )

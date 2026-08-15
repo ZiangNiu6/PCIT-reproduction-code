@@ -97,9 +97,9 @@ requires all 27,000 matched outputs before it can replace the manuscript
 figure. Legacy `pcm-additive` results are never accepted by this plotter.
 
 The complete CCLE workflow runs locally by default. It first runs a small,
-data-independent matched-calibration smoke test, then runs the 30 targets over
-five paired effects at `s = 10` (150 target/effect jobs), strictly combines
-them, and regenerates the figures. The domain-level
+data-independent matched-calibration smoke test, then runs 30 null targets and
+12 nonnull representative-target settings at `s = 10` (42 jobs total),
+strictly combines them, and regenerates the figures. The domain-level
 `submit-ccle.sh` supports asynchronous SGE submission for the full rerun; see
 the CCLE instructions below. The complete Frangieh workflow requires an SGE
 cluster and the processed `ondisc` data. The `plot-only` workflows require
@@ -107,7 +107,7 @@ only the corresponding saved result files. Supplying fewer than 20 Frangieh
 replicates is useful for a cluster test, but the postprocessor deliberately
 requires replicate IDs 1--20 before it will overwrite manuscript figures.
 
-## CCLE paired effect-grid matched calibration (v4)
+## CCLE representative effect-grid matched calibration (v4)
 
 The CCLE analysis uses the result namespace
 `ccle-typeI-synthY-30targets-matched-v4`. Within each GCM or PCM pair, normal
@@ -124,32 +124,42 @@ order does not alter later responses, splits, or nuisance fits. Each per-setup
 RDS records the schema and provenance needed by the combiner to verify this
 contract.
 
-The v4 design fixes the synthetic-response active-set size at `s = 10`. For
-each of the 30 mutation targets it pairs the five effects
-`delta = 0, 0.5, 1, 1.5, 2` using identical active sets, coefficients, Gaussian
-noise, PCM splits, permutation streams, and learner streams. If `sigma` is the
-synthetic-outcome noise standard deviation, the outcomes are
+The v4 design fixes the synthetic-response active-set size at `s = 10` and
+retains one `delta = 0` null setting for each of the 30 mutation targets used
+in the paper's calibration analysis. Nonzero effects are run only for the
+three conditional-effect representatives: `RIOK3_MUT` (high sparsity/rare),
+`PLK1_MUT` (medium sparsity), and `ATP11A_MUT` (low sparsity/common). Their
+paired grids are
 
 ```text
 Y^(delta) = mu(Z) + epsilon + delta * sigma * X_j
-delta in {0, 0.5, 1, 1.5, 2}
+RIOK3_MUT:  delta in {0, 1, 2, 3, 4}
+PLK1_MUT:   delta in {0, 0.5, 1, 1.5, 2}
+ATP11A_MUT: delta in {0, 0.5, 1, 1.5, 2}
 ```
 
+`CHIC2_MUT` remains the high-sparsity representative in the paper's null
+calibration and p-value-quantile figures. Only the v4 conditional-effect
+diagnostic replaces it with `RIOK3_MUT`.
+
 Thus each nonzero effect is a `delta`-noise-SD per-carrier shift and differs
-from its paired null only through the added target effect. The binary target is
-not variance-standardized, avoiding implausibly large effects for one-carrier
+from that target's paired null only through the added target effect: the active
+set, coefficients, Gaussian noise, PCM split, permutation streams, and learner
+streams are shared across its five grid points. The binary target is not
+variance-standardized, avoiding implausibly large effects for one-carrier
 mutations. The 30 `delta = 0` jobs deliberately reuse the old matched-v2
 `s = 10` random-number streams, so existing and new null results can be checked
-exactly.
+exactly. The complete contract therefore contains 42 records: 30 null records
+plus four additional effect records for each of the three representatives.
 
 The v4 filenames deliberately differ from legacy unmatched, matched-v2, and
 matched-v3 filenames. Per-setup files use
 `ccle-typeI-synthY-30targets-matched-v4-results-{TARGET}-{EFFECT_ID}-s10.rds`,
-where `EFFECT_ID` is one of `delta0`, `delta0p5`, `delta1`, `delta1p5`, or
-`delta2`. The v4 combiner accepts only the complete paired v4 schema, so older
-results cannot be silently mixed into the effect-grid analysis. Per-setup and
-combined results are written under `$LOCAL_PDRT_DATA_DIR/ccle`; the combined
-files are
+where `EFFECT_ID` is the target-appropriate member of `delta0`, `delta0p5`,
+`delta1`, `delta1p5`, `delta2`, `delta3`, or `delta4`. The v4 combiner accepts
+only the exact 30-null/12-alternative paired schema, so older results cannot be
+silently mixed into the effect-grid analysis. Per-setup and combined results
+are written under `$LOCAL_PDRT_DATA_DIR/ccle`; the combined files are
 `ccle-typeI-synthY-30targets-matched-v4-results.rds` and
 `ccle-typeI-synthY-30targets-matched-v4-rejection-rates.csv`.
 
@@ -182,23 +192,24 @@ root, where the project's `.Rprofile` activates `renv`. The launcher
 deliberately avoids `qsub -V` and does not forward the full login environment.
 The configured paths must be visible at the same location on every compute
 node. `PROJECT` and `MEM` optionally override the SGE project and per-job
-memory request. After all 150 jobs have finished successfully, run
+memory request. After all 42 jobs have finished successfully, run
 
 ```bash
 ./run_all_semi_synthetic.sh plot-only
 ```
 
 If the matched-v4 combined RDS is absent but any matched-v4 per-setup output
-exists, `plot-only` strictly requires and combines all 150 setup files; it never
+exists, `plot-only` strictly requires and combines all 42 setup files; it never
 silently falls back after a partial v4 run. With a complete v4 artifact, the
-plotter validates the exact 30-by-5 grid and within-target pairing, uses only
-`delta = 0` for the unchanged null-calibration figures, and writes
+plotter validates the exact 30 nulls, the three target-specific five-point
+grids, and within-target pairing. It uses only `delta = 0` for the unchanged
+null-calibration figures and writes
 `ccle-alternative-synthY-30targets-rejection.pdf`. That GCM-only diagnostic
-first computes each target's rejection rate, then averages the 10 targets
-equally within each correctly relabeled mutation-sparsity group. It displays
-raw rejection at the nominal `0.05` cutoff over `delta`, including the null;
-because the methods can have different null rejection rates, it is not a
-size-adjusted power curve. Unmatched legacy combined results are ignored.
+shows separate RIOK3, PLK1, and ATP11A curves on one common absolute effect
+axis from 0 to 4; the panel labels state each target's actual grid. It displays
+raw rejection at the nominal `0.05` cutoff over `delta`, including the paired
+null. Because the methods can have different null rejection rates, this is not
+a size-adjusted power curve. Unmatched legacy combined results are ignored.
 
 ## CCLE asymptotic-GCM effect-grid pilot
 
@@ -247,13 +258,15 @@ Carlo standard errors; the combined RDS also retains validated raw rows and
 full method, seed, preflight, and package provenance.
 
 The pilot considered all eight candidates independently of the production
-replicates. Its equal-target summaries were used to retain a null anchor and a
-spaced weak-to-large-signal progression that remains informative after
-grouping targets by mutation sparsity. The selected production grid is
-`0, 0.5, 1, 1.5, 2`; the intermediate pilot-only effects `0.25, 0.75, 1.25`
-are not run in v4. Production plots show both asymptotic and permutation GCM,
-whereas the asymptotic-only pilot itself is never presented as confirmatory
-power evidence.
+replicates. Although the rare/high-sparsity group's mean rejection remained
+low at `delta = 2`, `RIOK3_MUT` had a clearly visible asymptotic-GCM rejection
+rate (`15/25 = 0.60`) at that effect and no pilot rejection at `delta = 0`.
+This pilot-guided target choice must be confirmed by the independent `R = 500`
+production run. The production grids are `0, 1, 2, 3, 4` for `RIOK3_MUT` and
+`0, 0.5, 1, 1.5, 2` for `PLK1_MUT` and `ATP11A_MUT`; nonzero effects are not
+run for the other 27 targets. Production plots show both asymptotic and
+permutation GCM, whereas the asymptotic-only pilot itself is never presented
+as confirmatory power evidence.
 
 For auditability, the `R = 25` selection-only equal-target asymptotic-GCM
 nominal rejection rates were:

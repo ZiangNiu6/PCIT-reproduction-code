@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# Run or submit 150 matched-v4 CCLE target/effect jobs.
+# Run or submit 42 matched-v4 CCLE null/representative-effect jobs.
+# Power representatives are RIOK3_MUT (high sparsity), PLK1_MUT (medium), and
+# ATP11A_MUT (low sparsity); all 30 targets retain their delta = 0 job.
 #
 # Usage:
 #   bash reproduction-code/semi-synthetic-analysis/submit-ccle.sh
@@ -16,7 +18,7 @@
 # Optional environment variables for --sge:
 #   PROJECT    SGE project (default: stat_bhaswar_team)
 #   MEM        m_mem_free request (default: 8G)
-#   N_SETUPS   number of setup indices to dispatch (default: 150)
+#   N_SETUPS   number of setup indices to dispatch (default: 42)
 
 set -euo pipefail
 
@@ -76,9 +78,9 @@ for input_file in mutation.txt response.csv; do
   fi
 done
 
-n_setups=${N_SETUPS:-150}
-if [[ ! "$n_setups" =~ ^[1-9][0-9]*$ ]] || (( n_setups > 150 )); then
-  echo "ERROR: N_SETUPS must be an integer from 1 through 150." >&2
+n_setups=${N_SETUPS:-42}
+if [[ ! "$n_setups" =~ ^[1-9][0-9]*$ ]] || (( n_setups > 42 )); then
+  echo "ERROR: N_SETUPS must be an integer from 1 through 42." >&2
   exit 2
 fi
 
@@ -97,7 +99,7 @@ rscript_bin=$(command -v Rscript)
 # the path automatically. Only the required data path is embedded in the job.
 echo "Project root:        $project_root"
 echo "Runner script:       $runner"
-echo "Result namespace:    matched-v4-effect-grid-s10"
+echo "Result namespace:    matched-v4-representative-effect-grid-s10"
 echo "Number of setups:    $n_setups"
 echo "LOCAL_PDRT_DATA_DIR: $data_root"
 echo "Rscript:             $rscript_bin"
@@ -137,4 +139,4 @@ done
 echo "Submitted $n_setups CCLE setup job(s)."
 echo "After they finish, run: ./run_all_semi_synthetic.sh plot-only"
 echo "If the matched-v4 combined result is absent, the root runner will"
-echo "strictly validate and combine all 150 matched-v4 setup files before plotting."
+echo "strictly validate and combine all 42 matched-v4 setup files before plotting."

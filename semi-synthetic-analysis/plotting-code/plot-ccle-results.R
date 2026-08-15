@@ -2,15 +2,16 @@
 ###############################################################################
 # Plot the paired CCLE synthetic-outcome analysis at s = 10.
 #
-# The preferred input is the matched-v4 result containing the complete
-# 30-target x 5-effect grid at s = 10. The plotter can also validate and use a
-# transitional matched-v3 or matched-v2 artifact when selected through
+# The preferred input is the matched-v4 result containing 30 null targets and
+# 12 additional nonnull settings for three fixed representatives at s = 10.
+# The plotter can also validate and use a transitional matched-v3 or matched-v2
+# artifact when selected through
 # CCLE_RESULTS_SCHEMA=auto|v4|v3|v2 (default: auto, priority v4 > v3 > v2).
 # Unmatched legacy results are never accepted. Existing null-figure filenames
-# are preserved. V4 additionally writes an equal-target, sparsity-grouped GCM
-# nominal-rejection curve over the effect grid. Pass --intro-only to regenerate
-# only the standalone CHIC2 preview or --validate-only to validate without
-# writing figures.
+# are preserved. V4 additionally writes three representative-target GCM
+# nominal-rejection curves on one absolute effect axis. Pass --intro-only to
+# regenerate only the standalone CHIC2 preview or --validate-only to validate
+# without writing figures.
 ###############################################################################
 
 script_args <- commandArgs(trailingOnly = TRUE)
@@ -87,7 +88,7 @@ SCHEMA_V2          <- "ccle_synthy_matched_v2"
 SCHEMA_V3          <- "ccle_synthy_matched_v3"
 SCHEMA_V4          <- "ccle_synthy_matched_v4"
 SIMULATION_DESIGN_V3 <- "paired_null_alternative_s10"
-SIMULATION_DESIGN_V4 <- "paired_effect_grid_s10"
+SIMULATION_DESIGN_V4 <- "representative_effect_grid_s10"
 CALIBRATION_DESIGN <- "shared_observed_statistic"
 EXPECTED_R <- 500L
 EXPECTED_B_MAX <- 499L
@@ -95,11 +96,34 @@ EXPECTED_H <- 15L
 EXPECTED_ALPHA <- 0.05
 EXPECTED_S <- 10L
 EXPECTED_ALT_EFFECT <- 0.75
-EXPECTED_EFFECT_IDS_V4 <- c(
-  "delta0", "delta0p5", "delta1", "delta1p5", "delta2"
-)
-EXPECTED_EFFECTS_V4 <- c(0, 0.5, 1, 1.5, 2)
 EXPECTED_EFFECT_SCALE <- "noise_sd_equals_sd_mu"
+EXPECTED_SETUP_ORDER_V4 <-
+  "null_all_targets_then_grid_index_major_representatives"
+EXPECTED_REPRESENTATIVE_TARGETS_V4 <- data.frame(
+  representative_order = 1:3,
+  target_idx = c(9L, 15L, 22L),
+  target = c("RIOK3_MUT", "PLK1_MUT", "ATP11A_MUT"),
+  sparsity_tag = c("low_sparsity", "medium_sparsity", "high_sparsity"),
+  stringsAsFactors = FALSE
+)
+EXPECTED_REPRESENTATIVE_EFFECTS_V4 <- list(
+  RIOK3_MUT = c(0, 1, 2, 3, 4),
+  PLK1_MUT = c(0, 0.5, 1, 1.5, 2),
+  ATP11A_MUT = c(0, 0.5, 1, 1.5, 2)
+)
+effect_id_from_size_v4 <- function(x) {
+  lookup <- c(
+    `0` = "delta0", `0.5` = "delta0p5", `1` = "delta1",
+    `1.5` = "delta1p5", `2` = "delta2", `3` = "delta3",
+    `4` = "delta4"
+  )
+  ids <- unname(lookup[as.character(x)])
+  if (anyNA(ids)) {
+    stop("No canonical v4 effect ID for effect size: ",
+         paste(x[is.na(ids)], collapse = ", "), call. = FALSE)
+  }
+  ids
+}
 
 results_path_v4 <- file.path(
   data_root,
@@ -156,7 +180,7 @@ input_schema <- unname(schema_versions[[selected_schema]])
 if (!identical(selected_schema, "v4")) {
   warning(
     "Using explicitly validated transitional matched-", selected_schema,
-    " CCLE results; the complete v4 effect-grid diagnostic is unavailable.",
+    " CCLE results; the v4 representative-grid diagnostic is unavailable.",
     call. = FALSE
   )
 }
@@ -178,7 +202,7 @@ required_combined_fields <- c(
 )
 expected_n_setups <- switch(
   selected_schema,
-  v4 = 150L,
+  v4 = 42L,
   v3 = 60L,
   v2 = 60L
 )
@@ -224,49 +248,30 @@ if (identical(input_schema, SCHEMA_V3)) {
 }
 if (identical(input_schema, SCHEMA_V4)) {
   required_v4_combined <- c(
-    "simulation_design", "n_targets", "fixed_s", "hypotheses",
-    "effect_ids", "effect_sizes", "effect_grid", "setup_order",
-    "paired_seed_indices", "seed_pairing", "effect_scale"
+    "simulation_design", "n_targets", "n_representatives",
+    "n_null_setups", "n_alternative_setups", "fixed_s",
+    "canonical_targets", "representative_targets",
+    "representative_effect_grid", "setup_table", "setup_order",
+    "paired_seed_indices", "seed_pairing", "effect_scale",
+    "summary_by_representative_effect_method",
+    "paired_gain_vs_delta0_by_representative_effect_method",
+    "null_summary_by_sparsity_method", "null_summary_by_method"
   )
   if (length(setdiff(required_v4_combined, names(combined))) ||
       !identical(combined$simulation_design, SIMULATION_DESIGN_V4) ||
       !identical(as.integer(combined$n_targets), 30L) ||
+      !identical(as.integer(combined$n_representatives), 3L) ||
+      !identical(as.integer(combined$n_null_setups), 30L) ||
+      !identical(as.integer(combined$n_alternative_setups), 12L) ||
       !identical(as.integer(combined$fixed_s), EXPECTED_S) ||
-      !identical(names(combined$hypotheses), EXPECTED_EFFECT_IDS_V4) ||
-      !identical(
-        unname(as.character(combined$hypotheses)),
-        c("null", rep("alternative", 4L))
-      ) ||
-      !identical(as.character(combined$effect_ids), EXPECTED_EFFECT_IDS_V4) ||
-      !identical(names(combined$effect_sizes), EXPECTED_EFFECT_IDS_V4) ||
-      !isTRUE(all.equal(
-        as.numeric(combined$effect_sizes), EXPECTED_EFFECTS_V4,
-        tolerance = 0
-      )) ||
-      !is.data.frame(combined$effect_grid) ||
-      !identical(
-        names(combined$effect_grid),
-        c("effect_idx", "effect_id", "effect_size", "hypothesis")
-      ) ||
-      !identical(as.integer(combined$effect_grid$effect_idx), 1:5) ||
-      !identical(as.character(combined$effect_grid$effect_id),
-                 EXPECTED_EFFECT_IDS_V4) ||
-      !isTRUE(all.equal(
-        as.numeric(combined$effect_grid$effect_size), EXPECTED_EFFECTS_V4,
-        tolerance = 0
-      )) ||
-      !identical(
-        as.character(combined$effect_grid$hypothesis),
-        c("null", rep("alternative", 4L))
-      ) ||
-      !identical(combined$setup_order, "effect_major_then_target") ||
+      !identical(combined$setup_order, EXPECTED_SETUP_ORDER_V4) ||
       !identical(as.integer(combined$paired_seed_indices), 31:60) ||
       !is.list(combined$seed_pairing) ||
       !identical(
         names(combined$seed_pairing),
         c(
-          "formula", "reference_effect_id", "paired_across_effect_sizes",
-          "component_fields"
+          "formula", "reference_effect_id", "paired_targets",
+          "paired_across_effect_sizes", "component_fields"
         )
       ) ||
       !identical(
@@ -274,11 +279,154 @@ if (identical(input_schema, SCHEMA_V4)) {
         "paired_seed_idx = target_idx + 30"
       ) ||
       !identical(combined$seed_pairing$reference_effect_id, "delta0") ||
+      !identical(
+        as.character(combined$seed_pairing$paired_targets),
+        EXPECTED_REPRESENTATIVE_TARGETS_V4$target
+      ) ||
       !isTRUE(combined$seed_pairing$paired_across_effect_sizes) ||
       !identical(combined$seed_pairing$component_fields, seed_fields) ||
       !identical(combined$effect_scale, EXPECTED_EFFECT_SCALE)) {
-    stop("Malformed paired matched-v4 CCLE effect-grid design: ", results_path,
+    stop("Malformed paired matched-v4 CCLE representative-grid design: ",
+         results_path,
          call. = FALSE)
+  }
+}
+if (identical(input_schema, SCHEMA_V4)) {
+  canonical_targets_v4 <- combined$canonical_targets
+  representative_targets_v4 <- combined$representative_targets
+  representative_grid_v4 <- combined$representative_effect_grid
+  setup_table_v4 <- combined$setup_table
+  same_ordered_frame <- function(actual, expected) {
+    is.data.frame(actual) && is.data.frame(expected) &&
+      identical(names(actual), names(expected)) &&
+      isTRUE(all.equal(
+        actual, expected, tolerance = 0, check.attributes = FALSE
+      ))
+  }
+
+  if (!is.data.frame(canonical_targets_v4) ||
+      !identical(
+        names(canonical_targets_v4),
+        c("target_idx", "target", "sparsity_tag", "freq")
+      ) ||
+      nrow(canonical_targets_v4) != 30L ||
+      !identical(as.integer(canonical_targets_v4$target_idx), 1:30) ||
+      anyNA(canonical_targets_v4) ||
+      anyDuplicated(canonical_targets_v4$target) ||
+      any(!is.finite(canonical_targets_v4$freq)) ||
+      any(canonical_targets_v4$freq <= 0 | canonical_targets_v4$freq >= 1) ||
+      !identical(
+        as.integer(table(factor(
+          canonical_targets_v4$sparsity_tag,
+          levels = c("low_sparsity", "medium_sparsity", "high_sparsity")
+        ))),
+        rep(10L, 3L)
+      )) {
+    stop("Malformed canonical-target table in matched-v4 CCLE result.",
+         call. = FALSE)
+  }
+
+  expected_representative_core <-
+    EXPECTED_REPRESENTATIVE_TARGETS_V4[, c(
+      "representative_order", "target_idx", "target", "sparsity_tag"
+    )]
+  if (!is.data.frame(representative_targets_v4) ||
+      !identical(
+        names(representative_targets_v4),
+        c(
+          "representative_order", "target_idx", "target", "sparsity_tag",
+          "freq"
+        )
+      ) ||
+      nrow(representative_targets_v4) != 3L ||
+      !same_ordered_frame(
+        representative_targets_v4[, names(expected_representative_core)],
+        expected_representative_core
+      ) ||
+      any(!is.finite(representative_targets_v4$freq))) {
+    stop("Malformed representative-target table in matched-v4 CCLE result.",
+         call. = FALSE)
+  }
+  representative_canonical_match <- match(
+    representative_targets_v4$target,
+    canonical_targets_v4$target
+  )
+  if (anyNA(representative_canonical_match) ||
+      !isTRUE(all.equal(
+        representative_targets_v4$freq,
+        canonical_targets_v4$freq[representative_canonical_match],
+        tolerance = 0, check.attributes = FALSE
+      ))) {
+    stop("Representative targets disagree with the canonical v4 target table.",
+         call. = FALSE)
+  }
+
+  expected_representative_grid_v4 <- do.call(
+    rbind,
+    lapply(1:5, function(grid_idx) {
+      effect_sizes <- vapply(
+        representative_targets_v4$target,
+        function(target) {
+          EXPECTED_REPRESENTATIVE_EFFECTS_V4[[target]][[grid_idx]]
+        },
+        numeric(1L)
+      )
+      transform(
+        representative_targets_v4,
+        grid_idx = grid_idx,
+        effect_id = effect_id_from_size_v4(effect_sizes),
+        effect_size = effect_sizes,
+        hypothesis = ifelse(effect_sizes == 0, "null", "alternative")
+      )
+    })
+  )
+  rownames(expected_representative_grid_v4) <- NULL
+  expected_representative_grid_v4 <-
+    expected_representative_grid_v4[, c(
+      "representative_order", "target_idx", "target", "sparsity_tag",
+      "freq", "grid_idx", "effect_id", "effect_size", "hypothesis"
+    )]
+  if (!same_ordered_frame(
+        representative_grid_v4, expected_representative_grid_v4
+      )) {
+    stop("Malformed target-specific v4 representative effect grids.",
+         call. = FALSE)
+  }
+
+  expected_null_setups_v4 <- transform(
+    canonical_targets_v4,
+    paired_seed_idx = target_idx + 30L,
+    s = EXPECTED_S,
+    grid_idx = 1L,
+    effect_id = "delta0",
+    effect_size = 0,
+    hypothesis = "null"
+  )
+  expected_alternative_setups_v4 <- expected_representative_grid_v4[
+    expected_representative_grid_v4$grid_idx > 1L,
+    c(
+      "target_idx", "target", "sparsity_tag", "freq", "grid_idx",
+      "effect_id", "effect_size", "hypothesis"
+    )
+  ]
+  expected_alternative_setups_v4$paired_seed_idx <-
+    expected_alternative_setups_v4$target_idx + 30L
+  expected_alternative_setups_v4$s <- EXPECTED_S
+  setup_columns_v4 <- c(
+    "target_idx", "paired_seed_idx", "target", "sparsity_tag", "freq", "s",
+    "grid_idx", "effect_id", "effect_size", "hypothesis"
+  )
+  expected_setup_table_v4 <- rbind(
+    expected_null_setups_v4[, setup_columns_v4],
+    expected_alternative_setups_v4[, setup_columns_v4]
+  )
+  expected_setup_table_v4$setup_idx <- seq_len(nrow(expected_setup_table_v4))
+  expected_setup_table_v4 <- expected_setup_table_v4[, c(
+    "setup_idx", setup_columns_v4
+  )]
+  rownames(expected_setup_table_v4) <- NULL
+  if (!same_ordered_frame(setup_table_v4, expected_setup_table_v4)) {
+    stop("Malformed exact 42-row v4 setup table.", call. = FALSE)
   }
 }
 results <- combined$results
@@ -296,7 +444,7 @@ required_record_fields_v3 <- c(
   "effect_scale", "paired_seed_idx"
 )
 required_record_fields_v4 <- c(
-  required_record_fields_v3, "effect_idx", "effect_id"
+  required_record_fields_v3, "grid_idx", "effect_id"
 )
 validate_record <- function(record, key) {
   if (!is.list(record) ||
@@ -376,40 +524,41 @@ validate_record <- function(record, key) {
     }
   }
   if (identical(input_schema, SCHEMA_V4)) {
-    effect_idx <- as.integer(record$effect_idx)
-    expected_effect <- if (
-      length(effect_idx) == 1L && !is.na(effect_idx) &&
-      effect_idx >= 1L && effect_idx <= length(EXPECTED_EFFECTS_V4)
-    ) EXPECTED_EFFECTS_V4[[effect_idx]] else NA_real_
-    expected_effect_id <- if (is.finite(expected_effect)) {
-      EXPECTED_EFFECT_IDS_V4[[effect_idx]]
-    } else {
-      NA_character_
-    }
-    expected_hypothesis <- if (isTRUE(expected_effect == 0)) {
-      "null"
-    } else {
-      "alternative"
-    }
+    record_setup_idx <- as.integer(record$setup_idx)
+    expected_setup <- if (
+      length(record_setup_idx) == 1L && !is.na(record_setup_idx) &&
+      record_setup_idx >= 1L && record_setup_idx <= 42L
+    ) expected_setup_table_v4[record_setup_idx, , drop = FALSE] else NULL
     if (!identical(record$simulation_design, SIMULATION_DESIGN_V4) ||
         !identical(as.integer(record$s), EXPECTED_S) ||
-        length(record$target_idx) != 1L || is.na(record$target_idx) ||
-        record$target_idx < 1L || record$target_idx > 30L ||
+        is.null(expected_setup) ||
+        !identical(as.integer(record$target_idx),
+                   as.integer(expected_setup$target_idx)) ||
         length(record$paired_seed_idx) != 1L ||
         !identical(
           as.integer(record$paired_seed_idx),
-          as.integer(record$target_idx) + 30L
+          as.integer(expected_setup$paired_seed_idx)
         ) ||
-        !is.finite(expected_effect) ||
-        !identical(as.integer(record$setup_idx),
-                   (effect_idx - 1L) * 30L + as.integer(record$target_idx)) ||
-        !identical(as.character(record$effect_id), expected_effect_id) ||
+        !identical(as.character(record$target),
+                   as.character(expected_setup$target)) ||
+        !identical(as.character(record$sparsity_tag),
+                   as.character(expected_setup$sparsity_tag)) ||
         !isTRUE(all.equal(
-          as.numeric(record$effect_size), expected_effect, tolerance = 0
+          as.numeric(record$freq), as.numeric(expected_setup$freq),
+          tolerance = 0
         )) ||
-        !identical(as.character(record$hypothesis), expected_hypothesis) ||
+        !identical(as.integer(record$grid_idx),
+                   as.integer(expected_setup$grid_idx)) ||
+        !identical(as.character(record$effect_id),
+                   as.character(expected_setup$effect_id)) ||
+        !isTRUE(all.equal(
+          as.numeric(record$effect_size),
+          as.numeric(expected_setup$effect_size), tolerance = 0
+        )) ||
+        !identical(as.character(record$hypothesis),
+                   as.character(expected_setup$hypothesis)) ||
         !identical(record$effect_scale, EXPECTED_EFFECT_SCALE)) {
-      stop("Invalid paired v4 effect-grid metadata in: ", key,
+      stop("Invalid paired v4 representative-grid metadata in: ", key,
            call. = FALSE)
     }
   }
@@ -695,8 +844,8 @@ if (identical(input_schema, SCHEMA_V2)) {
   target_indices <- vapply(
     results, function(x) as.integer(x$target_idx), integer(1L)
   )
-  effect_indices <- vapply(
-    results, function(x) as.integer(x$effect_idx), integer(1L)
+  grid_indices <- vapply(
+    results, function(x) as.integer(x$grid_idx), integer(1L)
   )
   effect_ids <- vapply(
     results, function(x) as.character(x$effect_id), character(1L)
@@ -707,32 +856,74 @@ if (identical(input_schema, SCHEMA_V2)) {
   if (!identical(unique(s_values), EXPECTED_S) ||
       !setequal(unique(hypotheses), c("null", "alternative")) ||
       sum(hypotheses == "null") != 30L ||
-      sum(hypotheses == "alternative") != 120L ||
-      any(table(targets) != length(EXPECTED_EFFECTS_V4)) ||
-      !identical(unname(sort(unique(target_indices))), seq_len(30L)) ||
-      any(table(target_indices) != length(EXPECTED_EFFECTS_V4)) ||
-      !identical(sort(unique(effect_indices)),
-                 seq_along(EXPECTED_EFFECTS_V4)) ||
-      any(table(effect_indices) != 30L) ||
-      !identical(unique(effect_ids[order(effect_indices)]),
-                 EXPECTED_EFFECT_IDS_V4) ||
+      sum(hypotheses == "alternative") != 12L ||
+      !identical(unname(setup_ids), seq_len(42L)) ||
+      !identical(unname(target_indices),
+                 as.integer(expected_setup_table_v4$target_idx)) ||
+      !identical(unname(grid_indices),
+                 as.integer(expected_setup_table_v4$grid_idx)) ||
+      !identical(unname(effect_ids),
+                 as.character(expected_setup_table_v4$effect_id)) ||
       !isTRUE(all.equal(
-        unique(effect_sizes[order(effect_indices)]), EXPECTED_EFFECTS_V4,
+        unname(effect_sizes), as.numeric(expected_setup_table_v4$effect_size),
         tolerance = 0
       )) ||
-      any(table(targets, effect_ids) != 1L) ||
-      any(table(sparsity_tags, effect_ids) != 10L)) {
+      !identical(unname(targets),
+                 as.character(expected_setup_table_v4$target)) ||
+      !identical(unname(sort(unique(target_indices))), seq_len(30L)) ||
+      !identical(
+        as.integer(table(factor(grid_indices, levels = 1:5))),
+        c(30L, 3L, 3L, 3L, 3L)
+      )) {
     stop(
-      "The matched-v4 result does not match the canonical paired 30-target x 5-effect s=10 grid.",
+      paste(
+        "The matched-v4 result does not match the canonical 30-null plus",
+        "12-representative-alternative s=10 design."
+      ),
       call. = FALSE
     )
   }
-  for (target_name in unique(targets)) {
+  target_counts <- as.integer(table(factor(
+    targets, levels = canonical_targets_v4$target
+  )))
+  expected_target_counts <- ifelse(
+    canonical_targets_v4$target %in%
+      EXPECTED_REPRESENTATIVE_TARGETS_V4$target,
+    5L, 1L
+  )
+  if (!identical(target_counts, expected_target_counts)) {
+    stop("V4 target counts do not match 30 nulls and three five-point grids.",
+         call. = FALSE)
+  }
+  for (target_name in EXPECTED_REPRESENTATIVE_TARGETS_V4$target) {
     target_grid <- results[targets == target_name]
-    target_effect_indices <- vapply(
-      target_grid, function(x) as.integer(x$effect_idx), integer(1L)
+    target_grid_indices <- vapply(
+      target_grid, function(x) as.integer(x$grid_idx), integer(1L)
     )
-    target_grid <- target_grid[order(target_effect_indices)]
+    target_grid <- target_grid[order(target_grid_indices)]
+    target_effect_sizes <- vapply(
+      target_grid, function(x) as.numeric(x$effect_size), numeric(1L)
+    )
+    if (!identical(
+          unname(vapply(
+            target_grid, function(x) as.integer(x$grid_idx), integer(1L)
+          )),
+          1:5
+        ) ||
+        !isTRUE(all.equal(
+          unname(target_effect_sizes),
+          EXPECTED_REPRESENTATIVE_EFFECTS_V4[[target_name]],
+          tolerance = 0
+        )) ||
+        !identical(
+          unname(vapply(
+            target_grid, function(x) as.character(x$effect_id), character(1L)
+          )),
+          effect_id_from_size_v4(unname(target_effect_sizes))
+        )) {
+      stop("Target-specific v4 grid is malformed for: ", target_name,
+           call. = FALSE)
+    }
     base_record <- target_grid[[1L]]
     paired_fields_match <- vapply(target_grid[-1L], function(record) {
       identical(base_record$target_idx, record$target_idx) &&
@@ -768,12 +959,145 @@ if (identical(input_schema, SCHEMA_V2)) {
   }
   null_results <- results[effect_sizes == 0]
   alternative_results <- results[effect_sizes > 0]
-  effect_grid_results <- results
+  effect_grid_results <- results[
+    targets %in% EXPECTED_REPRESENTATIVE_TARGETS_V4$target
+  ]
   unique_pair_seeds <- unlist(lapply(null_results, function(record) {
     unlist(record$replication_metadata[seed_fields], use.names = FALSE)
   }), use.names = FALSE)
   if (anyDuplicated(unique_pair_seeds)) {
-    stop("Seed streams overlap across distinct matched-v4 target grids.",
+    stop("Seed streams overlap across distinct matched-v4 null targets.",
+         call. = FALSE)
+  }
+
+  record_rejection_v4 <- do.call(rbind, lapply(results, function(record) {
+    data.frame(
+      target_idx = record$target_idx,
+      target = record$target,
+      sparsity_tag = record$sparsity_tag,
+      freq = record$freq,
+      s = record$s,
+      grid_idx = record$grid_idx,
+      effect_id = record$effect_id,
+      effect_size = record$effect_size,
+      hypothesis = record$hypothesis,
+      method = names(record$rejection_rate),
+      rejection_rate = unname(record$rejection_rate),
+      na_rate = unname(record$na_rate[names(record$rejection_rate)]),
+      stringsAsFactors = FALSE
+    )
+  }))
+  rownames(record_rejection_v4) <- NULL
+  record_rejection_v4$representative_order <- match(
+    record_rejection_v4$target,
+    EXPECTED_REPRESENTATIVE_TARGETS_V4$target
+  )
+  delta0_rejection_v4 <- record_rejection_v4[
+    record_rejection_v4$effect_id == "delta0",
+    c("target", "method", "rejection_rate")
+  ]
+  names(delta0_rejection_v4)[3L] <- "delta0_rejection_rate"
+  delta0_match_v4 <- match(
+    paste(record_rejection_v4$target, record_rejection_v4$method, sep = "\r"),
+    paste(delta0_rejection_v4$target, delta0_rejection_v4$method, sep = "\r")
+  )
+  if (anyNA(delta0_match_v4)) {
+    stop("Every v4 result must match one target/method delta0 reference.",
+         call. = FALSE)
+  }
+  record_rejection_v4$delta0_rejection_rate <-
+    delta0_rejection_v4$delta0_rejection_rate[delta0_match_v4]
+  record_rejection_v4$paired_gain_vs_delta0 <-
+    record_rejection_v4$rejection_rate -
+    record_rejection_v4$delta0_rejection_rate
+
+  expected_representative_summary_v4 <- record_rejection_v4[
+    !is.na(record_rejection_v4$representative_order),
+    c(
+      "representative_order", "target_idx", "target", "sparsity_tag",
+      "freq", "s", "grid_idx", "effect_id", "effect_size", "hypothesis",
+      "method", "rejection_rate", "delta0_rejection_rate",
+      "paired_gain_vs_delta0", "na_rate"
+    )
+  ]
+  expected_representative_summary_v4$n_reps <- EXPECTED_R
+  expected_representative_summary_v4 <- expected_representative_summary_v4[
+    order(
+      expected_representative_summary_v4$representative_order,
+      expected_representative_summary_v4$grid_idx,
+      match(expected_representative_summary_v4$method, storage_methods)
+    ),
+  ]
+  rownames(expected_representative_summary_v4) <- NULL
+  if (!same_ordered_frame(
+        combined$summary_by_representative_effect_method,
+        expected_representative_summary_v4
+      )) {
+    stop("Stored representative v4 summary disagrees with setup records.",
+         call. = FALSE)
+  }
+
+  expected_paired_gain_v4 <- expected_representative_summary_v4[
+    expected_representative_summary_v4$hypothesis == "alternative",
+    c(
+      "representative_order", "target_idx", "target", "sparsity_tag",
+      "grid_idx", "effect_id", "effect_size", "method", "rejection_rate",
+      "delta0_rejection_rate", "paired_gain_vs_delta0", "n_reps"
+    )
+  ]
+  rownames(expected_paired_gain_v4) <- NULL
+  if (!same_ordered_frame(
+        combined$paired_gain_vs_delta0_by_representative_effect_method,
+        expected_paired_gain_v4
+      )) {
+    stop("Stored v4 paired-gain summary disagrees with setup records.",
+         call. = FALSE)
+  }
+
+  null_rejection_v4 <- record_rejection_v4[
+    record_rejection_v4$hypothesis == "null", , drop = FALSE
+  ]
+  expected_null_sparsity_v4 <- aggregate(
+    rejection_rate ~ sparsity_tag + method,
+    data = null_rejection_v4,
+    FUN = mean
+  )
+  names(expected_null_sparsity_v4)[3L] <- "mean_rejection_rate"
+  expected_null_sparsity_v4$n_targets <- 10L
+  expected_null_sparsity_v4$n_reps_per_target <- EXPECTED_R
+  expected_null_sparsity_v4 <- expected_null_sparsity_v4[
+    order(
+      match(expected_null_sparsity_v4$sparsity_tag,
+            c("low_sparsity", "medium_sparsity", "high_sparsity")),
+      match(expected_null_sparsity_v4$method, storage_methods)
+    ),
+  ]
+  rownames(expected_null_sparsity_v4) <- NULL
+  if (!same_ordered_frame(
+        combined$null_summary_by_sparsity_method,
+        expected_null_sparsity_v4
+      )) {
+    stop("Stored v4 null sparsity summary disagrees with setup records.",
+         call. = FALSE)
+  }
+
+  expected_null_method_v4 <- aggregate(
+    rejection_rate ~ method,
+    data = null_rejection_v4,
+    FUN = mean
+  )
+  names(expected_null_method_v4)[2L] <- "mean_rejection_rate"
+  expected_null_method_v4$n_targets <- 30L
+  expected_null_method_v4$n_reps_per_target <- EXPECTED_R
+  expected_null_method_v4 <- expected_null_method_v4[
+    order(match(expected_null_method_v4$method, storage_methods)),
+  ]
+  rownames(expected_null_method_v4) <- NULL
+  if (!same_ordered_frame(
+        combined$null_summary_by_method,
+        expected_null_method_v4
+      )) {
+    stop("Stored v4 null method summary disagrees with setup records.",
          call. = FALSE)
   }
 }
@@ -813,7 +1137,7 @@ if (validate_only) {
       sep = "")
   cat("Validated 30 s=10 null records",
       if (identical(input_schema, SCHEMA_V4)) {
-        " and the complete 30 x 5 paired effect grid"
+        " and 12 paired alternatives across three representative grids"
       } else if (length(alternative_results)) {
         " and 30 paired alternative records"
       } else "",
@@ -878,7 +1202,9 @@ if (nrow(rej_long) != length(results) * length(method_levels) ||
 }
 
 # ---------------------------------------------------------------------------
-# 2. Pick 3 representative setups (one per tercile) at s = 10.
+# 2. Pick 3 null-calibration representatives (one per tercile) at s = 10.
+#    These remain CHIC2, PLK1, and ATP11A; the v4 conditional-effect
+#    diagnostic separately uses RIOK3 as its high-sparsity representative.
 # ---------------------------------------------------------------------------
 chosen <- list(
   list(key = "CHIC2_MUT_s10",  tag = "low_sparsity"),
@@ -1325,7 +1651,7 @@ ggsave(combined_path, p_combined, width = 12, height = 7.8)
 cat("Saved: ", combined_path, "\n", sep = "")
 
 # ---------------------------------------------------------------------------
-# 7. Paired effect diagnostic (complete matched-v4 grid; v3 transitional arm).
+# 7. Paired effect diagnostic (v4 representative grids; v3 transitional arm).
 # ---------------------------------------------------------------------------
 if (identical(input_schema, SCHEMA_V4)) {
   alternative_method_levels <- c("perm_gcm", "asym_gcm")
@@ -1335,7 +1661,7 @@ if (identical(input_schema, SCHEMA_V4)) {
       sparsity_tag = record$sparsity_tag,
       freq = record$freq,
       s = record$s,
-      effect_idx = record$effect_idx,
+      grid_idx = record$grid_idx,
       effect_id = record$effect_id,
       effect_size = record$effect_size,
       method = names(record$rejection_rate),
@@ -1350,42 +1676,34 @@ if (identical(input_schema, SCHEMA_V4)) {
         unname(method_labels[as.character(method)]),
         levels = unname(method_labels[alternative_method_levels])
       ),
-      sparsity_tag = factor(
-        sparsity_tag,
-        levels = sparsity_levels,
-        labels = sparsity_labels[sparsity_levels]
+      target_label = factor(
+        target,
+        levels = EXPECTED_REPRESENTATIVE_TARGETS_V4$target,
+        labels = c(
+          "RIOK3 (high sparsity)\ngrid: 0, 1, 2, 3, 4",
+          "PLK1 (medium sparsity)\ngrid: 0, 0.5, 1, 1.5, 2",
+          "ATP11A (low sparsity)\ngrid: 0, 0.5, 1, 1.5, 2"
+        )
       )
     ) |>
     add_calibration_test_aesthetics()
 
   if (nrow(effect_grid_long) !=
-        30L * length(EXPECTED_EFFECTS_V4) *
-          length(alternative_method_levels) ||
+        3L * 5L * length(alternative_method_levels) ||
       anyNA(effect_grid_long$method) ||
       anyNA(effect_grid_long$method_label) ||
+      anyNA(effect_grid_long$target_label) ||
       any(table(
-        effect_grid_long$sparsity_tag,
-        effect_grid_long$effect_size,
+        effect_grid_long$target,
+        effect_grid_long$grid_idx,
         effect_grid_long$method
-      ) != 10L)) {
-    stop("The paired v4 GCM effect-grid diagnostic is incomplete.",
+      ) != 1L)) {
+    stop("The paired v4 representative GCM diagnostic is incomplete.",
          call. = FALSE)
   }
 
   effect_grid_summary <- effect_grid_long |>
-    group_by(sparsity_tag, effect_size, method, method_label,
-             test, calibration) |>
-    summarise(
-      rejection_rate = mean(rejection_rate),
-      n_targets = n(),
-      .groups = "drop"
-    )
-  if (nrow(effect_grid_summary) !=
-        3L * length(EXPECTED_EFFECTS_V4) *
-          length(alternative_method_levels) ||
-      any(effect_grid_summary$n_targets != 10L)) {
-    stop("Equal-target v4 sparsity-group aggregation failed.", call. = FALSE)
-  }
+    arrange(target_label, method, grid_idx)
 
   p_alternative <- ggplot(
     effect_grid_summary,
@@ -1406,10 +1724,14 @@ if (identical(input_schema, SCHEMA_V4)) {
     ) +
     geom_line(linewidth = 0.8) +
     geom_point(size = 2.1, stroke = 0.7) +
-    facet_wrap(~ sparsity_tag, nrow = 1) +
+    facet_wrap(~ target_label, nrow = 1) +
     scale_test_colour(guide = "none") +
     scale_calibration_linetype() +
-    scale_x_continuous(breaks = EXPECTED_EFFECTS_V4) +
+    scale_x_continuous(
+      limits = c(0, 4),
+      breaks = 0:4,
+      expand = expansion(mult = c(0.02, 0.02))
+    ) +
     scale_y_continuous(
       limits = c(0, 1),
       breaks = seq(0, 1, by = 0.2),
@@ -1418,14 +1740,21 @@ if (identical(input_schema, SCHEMA_V4)) {
     labs(
       title = "CCLE paired conditional-effect experiment",
       subtitle = paste(
-        "s = 10; each point equally averages 10 target-level rejection rates;",
-        "nominal cutoff = 0.05"
+        "s = 10; one target per sparsity group;",
+        "common absolute effect axis; nominal cutoff = 0.05"
       ),
       x = expression("Per-carrier shift " * delta * " (outcome-noise SD)"),
-      y = "Mean nominal-cutoff rejection rate",
+      y = "Nominal-cutoff rejection rate",
       caption = paste(
-        "GCM only. Curves show raw nominal-cutoff rejection, including",
-        "the null at delta = 0; they are not size-adjusted power curves."
+        paste(
+          "GCM only. Points are target-level raw nominal-cutoff rejection,",
+          "including the paired null at delta = 0."
+        ),
+        paste(
+          "Curves are not size-adjusted. RIOK3 was selected using an",
+          "independent R = 25 pilot; pilot runs are not pooled."
+        ),
+        sep = "\n"
       )
     ) +
     guides(
@@ -1444,7 +1773,7 @@ if (identical(input_schema, SCHEMA_V4)) {
     output_dir,
     "ccle-alternative-synthY-30targets-rejection.pdf"
   )
-  ggsave(alternative_path, p_alternative, width = 12, height = 4.8)
+  ggsave(alternative_path, p_alternative, width = 12.5, height = 5.0)
   cat("Saved: ", alternative_path, "\n", sep = "")
 } else if (length(alternative_results)) {
   alternative_method_levels <- c("perm_gcm", "asym_gcm")
@@ -1577,9 +1906,10 @@ rej_long |>
   print(n = Inf)
 
 if (identical(input_schema, SCHEMA_V4)) {
-  cat("\n=== Equal-target GCM nominal rejection by effect x sparsity ===\n")
+  cat("\n=== Representative-target GCM nominal rejection by effect ===\n")
   effect_grid_summary |>
-    arrange(sparsity_tag, method_label, effect_size) |>
+    arrange(target_label, method_label, grid_idx) |>
+    as_tibble() |>
     print(n = Inf)
 } else if (length(alternative_results)) {
   cat("\n=== Transitional v3 GCM rejection under the alternative ===\n")

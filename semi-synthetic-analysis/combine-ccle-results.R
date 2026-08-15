@@ -1,8 +1,7 @@
 #!/usr/bin/env Rscript
 ###############################################################################
-# Merge the paired matched-calibration v4 effect grid from
-# ccle-typeI-synthY-30targets.R (one job per target/effect setting) into a
-# single versioned combined file.
+# Merge the paired matched-calibration v4 representative-target effect grid
+# from ccle-typeI-synthY-30targets.R into a single versioned combined file.
 #
 # Inputs and outputs live in $LOCAL_PDRT_DATA_DIR/ccle:
 #   ccle-typeI-synthY-30targets-matched-v4-results-{TARGET}-{EFFECT_ID}-s10.rds
@@ -11,9 +10,11 @@
 #
 # To know which setups are expected, this script re-derives the same 30
 # deterministic targets as the runner: it samples 10 targets from each
-# frequency tercile of the screened mutations using SAMPLE_SEED = 2026. Each
-# target has five paired effects (0, 0.5, 1, 1.5, 2) at s = 10. The setup IDs
-# are effect-major: all 30 delta0 jobs, then all 30 delta0p5 jobs, and so on.
+# frequency tercile of the screened mutations using SAMPLE_SEED = 2026. All 30
+# targets have a delta0 job. Power is evaluated only for three pre-specified
+# representatives, in high-/medium-/low-sparsity display order: RIOK3_MUT on
+# {0, 1, 2, 3, 4}, and PLK1_MUT / ATP11A_MUT on {0, .5, 1, 1.5, 2}. Setup IDs
+# 31:42 are grid-index-major across those three representatives.
 #
 # Usage: Rscript combine-ccle-results.R
 ###############################################################################
@@ -29,16 +30,34 @@ EXPECTED_ALPHA <- 0.05
 EXPECTED_PCM_FRAC <- 0.5
 EXPECTED_RF_NUM_TREES <- 500L
 SCHEMA_VERSION     <- "ccle_synthy_matched_v4"
-SIMULATION_DESIGN  <- "paired_effect_grid_s10"
+SIMULATION_DESIGN  <- "representative_effect_grid_s10"
 CALIBRATION_DESIGN <- "shared_observed_statistic"
 EFFECT_SCALE       <- "noise_sd_equals_sd_mu"
-EFFECT_GRID <- data.frame(
-  effect_idx = seq_len(5L),
-  effect_id = c("delta0", "delta0p5", "delta1", "delta1p5", "delta2"),
-  effect_size = c(0, 0.5, 1, 1.5, 2),
-  hypothesis = c("null", rep("alternative", 4L)),
+SETUP_ORDER <- "null_all_targets_then_grid_index_major_representatives"
+REPRESENTATIVE_EXPECTATIONS <- data.frame(
+  representative_order = seq_len(3L),
+  target = c("RIOK3_MUT", "PLK1_MUT", "ATP11A_MUT"),
+  sparsity_tag = c("low_sparsity", "medium_sparsity", "high_sparsity"),
   stringsAsFactors = FALSE
 )
+REPRESENTATIVE_EFFECT_SIZES <- list(
+  RIOK3_MUT = c(0, 1, 2, 3, 4),
+  PLK1_MUT = c(0, 0.5, 1, 1.5, 2),
+  ATP11A_MUT = c(0, 0.5, 1, 1.5, 2)
+)
+effect_id_from_size <- function(x) {
+  lookup <- c(
+    `0` = "delta0", `0.5` = "delta0p5", `1` = "delta1",
+    `1.5` = "delta1p5", `2` = "delta2", `3` = "delta3",
+    `4` = "delta4"
+  )
+  ids <- unname(lookup[as.character(x)])
+  if (anyNA(ids)) {
+    stop("No canonical effect ID for effect size: ",
+         paste(x[is.na(ids)], collapse = ", "), call. = FALSE)
+  }
+  ids
+}
 EXPECTED_METHODS <- c(
   "asym_gcm", "asym_pcm", "perm_gcm", "perm_pcm", "naive"
 )
@@ -133,39 +152,110 @@ TARGETS_DF <- rbind(
 TARGETS_DF$freq <- freqs[TARGETS_DF$target]
 TARGETS_DF$target_idx <- seq_len(nrow(TARGETS_DF))
 
-SETUPS <- do.call(rbind, lapply(seq_len(nrow(EFFECT_GRID)), function(effect_idx) {
-  effect <- EFFECT_GRID[effect_idx, ]
+representative_match <- match(
+  REPRESENTATIVE_EXPECTATIONS$target,
+  TARGETS_DF$target
+)
+if (anyNA(representative_match)) {
+  stop(
+    "Pre-specified representative target(s) are absent from the canonical ",
+    "30-target sample: ",
+    paste(
+      REPRESENTATIVE_EXPECTATIONS$target[is.na(representative_match)],
+      collapse = ", "
+    ),
+    call. = FALSE
+  )
+}
+REPRESENTATIVE_TARGETS <- data.frame(
+  representative_order = REPRESENTATIVE_EXPECTATIONS$representative_order,
+  target_idx = TARGETS_DF$target_idx[representative_match],
+  target = TARGETS_DF$target[representative_match],
+  sparsity_tag = TARGETS_DF$tag[representative_match],
+  freq = TARGETS_DF$freq[representative_match],
+  stringsAsFactors = FALSE
+)
+if (!identical(
+      REPRESENTATIVE_TARGETS$sparsity_tag,
+      REPRESENTATIVE_EXPECTATIONS$sparsity_tag
+    )) {
+  stop(
+    "Representative targets do not have their expected canonical sparsity ",
+    "tags.",
+    call. = FALSE
+  )
+}
+
+## The 15-row metadata grid is grid-index-major, matching the ordering of the
+## representative records once their already-existing delta0 rows are selected.
+REPRESENTATIVE_EFFECT_GRID <- do.call(rbind, lapply(seq_len(5L), function(i) {
+  effect_sizes <- vapply(
+    REPRESENTATIVE_TARGETS$target,
+    function(target) REPRESENTATIVE_EFFECT_SIZES[[target]][[i]],
+    numeric(1L)
+  )
   transform(
-    TARGETS_DF,
-    s = FIXED_S,
-    effect_idx = effect$effect_idx,
-    effect_id = effect$effect_id,
-    effect_size = effect$effect_size,
-    hypothesis = effect$hypothesis,
-    paired_seed_idx = target_idx + nrow(TARGETS_DF)
+    REPRESENTATIVE_TARGETS,
+    grid_idx = i,
+    effect_id = effect_id_from_size(effect_sizes),
+    effect_size = effect_sizes,
+    hypothesis = ifelse(effect_sizes == 0, "null", "alternative")
   )
 }))
-rownames(SETUPS) <- NULL
+rownames(REPRESENTATIVE_EFFECT_GRID) <- NULL
+REPRESENTATIVE_EFFECT_GRID <- REPRESENTATIVE_EFFECT_GRID[, c(
+  "representative_order", "target_idx", "target", "sparsity_tag", "freq",
+  "grid_idx", "effect_id", "effect_size", "hypothesis"
+)]
+
+null_setups <- transform(
+  TARGETS_DF,
+  grid_idx = 1L,
+  effect_id = "delta0",
+  effect_size = 0,
+  hypothesis = "null"
+)
+names(null_setups)[names(null_setups) == "tag"] <- "sparsity_tag"
+representative_alternatives <- REPRESENTATIVE_EFFECT_GRID[
+  REPRESENTATIVE_EFFECT_GRID$grid_idx > 1L,
+  c(
+    "target", "sparsity_tag", "freq", "target_idx", "grid_idx",
+    "effect_id", "effect_size", "hypothesis"
+  )
+]
+SETUPS <- rbind(
+  null_setups[, names(representative_alternatives)],
+  representative_alternatives
+)
+SETUPS$s <- FIXED_S
+SETUPS$paired_seed_idx <- SETUPS$target_idx + nrow(TARGETS_DF)
 SETUPS$setup_idx <- seq_len(nrow(SETUPS))
+SETUPS <- SETUPS[, c(
+  "setup_idx", "target_idx", "paired_seed_idx", "target", "sparsity_tag",
+  "freq", "s", "grid_idx", "effect_id", "effect_size", "hypothesis"
+)]
+
 stopifnot(
-  nrow(SETUPS) == 150L,
-  identical(as.integer(SETUPS$setup_idx), seq_len(150L)),
+  nrow(TARGETS_DF) == 30L,
+  nrow(REPRESENTATIVE_TARGETS) == 3L,
+  nrow(REPRESENTATIVE_EFFECT_GRID) == 15L,
+  nrow(SETUPS) == 42L,
+  identical(as.integer(SETUPS$setup_idx), seq_len(42L)),
+  identical(as.integer(SETUPS$target_idx[seq_len(30L)]), seq_len(30L)),
+  identical(as.integer(SETUPS$grid_idx[seq_len(30L)]), rep(1L, 30L)),
+  identical(SETUPS$effect_id[seq_len(30L)], rep("delta0", 30L)),
+  identical(as.numeric(SETUPS$effect_size[seq_len(30L)]), rep(0, 30L)),
   identical(
-    as.integer(SETUPS$effect_idx),
-    rep(EFFECT_GRID$effect_idx, each = nrow(TARGETS_DF))
+    as.integer(SETUPS$grid_idx[31:42]),
+    rep(2:5, each = nrow(REPRESENTATIVE_TARGETS))
   ),
   identical(
-    as.character(SETUPS$effect_id),
-    rep(EFFECT_GRID$effect_id, each = nrow(TARGETS_DF))
-  ),
-  identical(
-    as.integer(SETUPS$target_idx),
-    rep(seq_len(nrow(TARGETS_DF)), times = nrow(EFFECT_GRID))
+    SETUPS$target[31:42],
+    rep(REPRESENTATIVE_TARGETS$target, times = 4L)
   ),
   identical(
     as.integer(SETUPS$paired_seed_idx),
-    rep(seq_len(nrow(TARGETS_DF)) + nrow(TARGETS_DF),
-        times = nrow(EFFECT_GRID))
+    as.integer(SETUPS$target_idx + nrow(TARGETS_DF))
   )
 )
 
@@ -202,7 +292,7 @@ unexpected <- setdiff(
 if (length(unexpected)) {
   stop(
     "Unexpected matched-v4 per-setup file(s); the directory must contain ",
-    "exactly the canonical 150-file target-by-effect grid:\n  ",
+    "exactly the canonical 42-file null-plus-representative grid:\n  ",
     paste(head(unexpected, 20L), collapse = "\n  "),
     if (length(unexpected) > 20L) "\n  ..." else "",
     call. = FALSE
@@ -214,7 +304,7 @@ results <- list()
 required_record_fields <- c(
   "schema_version", "simulation_design", "calibration_design",
   "matched_calibration", "setup_idx", "target_idx", "paired_seed_idx",
-  "target", "sparsity_tag", "freq", "s", "effect_idx", "effect_id",
+  "target", "sparsity_tag", "freq", "s", "grid_idx", "effect_id",
   "effect_size", "hypothesis", "effect_scale", "R",
   "B_requested", "B_max", "adaptive_h", "adaptive_alpha", "alternative",
   "pvals", "statistics",
@@ -284,7 +374,7 @@ validate_record <- function(rec, setup_idx, path) {
       !identical(as.integer(rec$s), as.integer(SETUPS$s[setup_idx])) ||
       !identical(
         as.character(rec$sparsity_tag),
-        as.character(SETUPS$tag[setup_idx])
+        as.character(SETUPS$sparsity_tag[setup_idx])
       ) ||
       !isTRUE(all.equal(
         as.numeric(rec$freq), as.numeric(SETUPS$freq[setup_idx]),
@@ -292,11 +382,11 @@ validate_record <- function(rec, setup_idx, path) {
       ))) {
     stop("Setup metadata mismatch in ", path, call. = FALSE)
   }
-  expected_effect_idx <- as.integer(SETUPS$effect_idx[setup_idx])
+  expected_grid_idx <- as.integer(SETUPS$grid_idx[setup_idx])
   expected_effect_id <- as.character(SETUPS$effect_id[setup_idx])
   expected_hypothesis <- SETUPS$hypothesis[setup_idx]
   expected_effect <- SETUPS$effect_size[setup_idx]
-  if (!identical(as.integer(rec$effect_idx), expected_effect_idx) ||
+  if (!identical(as.integer(rec$grid_idx), expected_grid_idx) ||
       !identical(as.character(rec$effect_id), expected_effect_id) ||
       !identical(as.character(rec$hypothesis), expected_hypothesis) ||
       length(rec$effect_size) != 1L ||
@@ -305,7 +395,7 @@ validate_record <- function(rec, setup_idx, path) {
         as.numeric(rec$effect_size), expected_effect, tolerance = 0
       )) ||
       !identical(rec$effect_scale, EFFECT_SCALE)) {
-    stop("Effect-grid metadata mismatch in ", path, call. = FALSE)
+    stop("Representative-grid metadata mismatch in ", path, call. = FALSE)
   }
   if (!identical(as.integer(rec$R), EXPECTED_R) ||
       !identical(as.integer(rec$B_requested), EXPECTED_B_MAX) ||
@@ -545,7 +635,7 @@ validate_record <- function(rec, setup_idx, path) {
         seed_schedule$schedule_index,
         "paired_seed_idx = target_idx + 30"
       ) ||
-      !identical(seed_schedule$setup_order, "effect_major_then_target") ||
+      !identical(seed_schedule$setup_order, SETUP_ORDER) ||
       !isTRUE(seed_schedule$paired_across_effect_sizes) ||
       !identical(
         seed_schedule$component_offsets,
@@ -594,22 +684,36 @@ for (i in seq_along(expected_files)) {
   results[[key]] <- rec
 }
 
-if (length(results) != 150L) {
-  stop("Expected exactly 150 validated v4 setups; got ", length(results),
+if (length(results) != 42L) {
+  stop("Expected exactly 42 validated v4 setups; got ", length(results),
        call. = FALSE)
 }
 
 setup_ids <- vapply(results, function(rec) as.integer(rec$setup_idx), integer(1L))
 target_ids <- vapply(results, function(rec) as.integer(rec$target_idx), integer(1L))
+grid_ids <- vapply(results, function(rec) as.integer(rec$grid_idx), integer(1L))
 effect_ids <- vapply(results, function(rec) as.character(rec$effect_id), character(1L))
+effect_sizes <- vapply(results, function(rec) as.numeric(rec$effect_size), numeric(1L))
 target_names <- vapply(results, function(rec) as.character(rec$target), character(1L))
-if (!identical(unname(sort(setup_ids)), seq_len(150L)) ||
-    !identical(unname(sort(unique(target_ids))), seq_len(30L)) ||
-    !identical(unname(unique(effect_ids)), EFFECT_GRID$effect_id) ||
-    any(table(target_ids, factor(effect_ids, levels = EFFECT_GRID$effect_id)) != 1L) ||
-    any(table(target_names, factor(effect_ids, levels = EFFECT_GRID$effect_id)) != 1L)) {
+expected_target_counts <- ifelse(
+  TARGETS_DF$target %in% REPRESENTATIVE_TARGETS$target, 5L, 1L
+)
+actual_target_counts <- as.integer(table(factor(
+  target_names,
+  levels = TARGETS_DF$target
+)))
+if (!identical(unname(setup_ids), as.integer(SETUPS$setup_idx)) ||
+    !identical(unname(target_ids), as.integer(SETUPS$target_idx)) ||
+    !identical(unname(grid_ids), as.integer(SETUPS$grid_idx)) ||
+    !identical(unname(effect_ids), as.character(SETUPS$effect_id)) ||
+    !identical(unname(effect_sizes), as.numeric(SETUPS$effect_size)) ||
+    !identical(unname(target_names), as.character(SETUPS$target)) ||
+    !identical(actual_target_counts, expected_target_counts)) {
   stop(
-    "Validated records do not form the exact 30-target by 5-effect cross-product.",
+    paste0(
+      "Validated records do not form the exact 30-null plus ",
+      "12-representative-alternative design."
+    ),
     call. = FALSE
   )
 }
@@ -621,24 +725,24 @@ if (!all(vapply(
       function(rec) identical(rec$method_definition, reference_definition),
       logical(1L)
     ))) {
-  stop("The 150 v4 setups do not share one method definition.", call. = FALSE)
+  stop("The 42 v4 setups do not share one method definition.", call. = FALSE)
 }
 if (!all(vapply(
       results,
       function(rec) identical(rec$package_versions, reference_versions),
       logical(1L)
     ))) {
-  stop("The 150 v4 setups were produced by different package versions.",
+  stop("The 42 v4 setups were produced by different package versions.",
        call. = FALSE)
 }
 
-# Every effect for a target must reuse exactly the delta0 stochastic
-# scaffolding. Method outputs and adaptive stopping diagnostics may differ with
-# the outcome and are deliberately not compared. Across targets, every
-# target/replicate/component stream must remain distinct. Validate pairing
-# before checking global uniqueness on the 30 canonical delta0 records only.
-for (target_idx in seq_len(nrow(TARGETS_DF))) {
-  target <- TARGETS_DF$target[target_idx]
+# Every nonzero representative effect must reuse exactly its target's delta0
+# stochastic scaffolding. Method outputs and adaptive stopping diagnostics may
+# differ with the outcome and are deliberately not compared. Across targets,
+# every target/replicate/component stream must remain distinct. Validate
+# pairing before checking global uniqueness on the 30 canonical delta0 records.
+for (representative_idx in seq_len(nrow(REPRESENTATIVE_TARGETS))) {
+  target <- REPRESENTATIVE_TARGETS$target[representative_idx]
   delta0_key <- sprintf("%s_delta0_s%d", target, FIXED_S)
   delta0_rec <- results[[delta0_key]]
   if (is.null(delta0_rec)) {
@@ -647,7 +751,15 @@ for (target_idx in seq_len(nrow(TARGETS_DF))) {
   }
   delta0_metadata <- delta0_rec$replication_metadata
 
-  for (effect_id in EFFECT_GRID$effect_id[-1L]) {
+  target_effect_ids <- REPRESENTATIVE_EFFECT_GRID$effect_id[
+    REPRESENTATIVE_EFFECT_GRID$target == target &
+      REPRESENTATIVE_EFFECT_GRID$grid_idx > 1L
+  ]
+  if (length(target_effect_ids) != 4L) {
+    stop("Representative target does not have four alternatives: ", target,
+         call. = FALSE)
+  }
+  for (effect_id in target_effect_ids) {
     effect_key <- sprintf("%s_%s_s%d", target, effect_id, FIXED_S)
     effect_rec <- results[[effect_key]]
     if (is.null(effect_rec)) {
@@ -721,7 +833,7 @@ rej_df <- do.call(rbind, lapply(results, function(r) {
              sparsity_tag = r$sparsity_tag,
              freq = r$freq,
              s = r$s,
-             effect_idx = r$effect_idx,
+             grid_idx = r$grid_idx,
              effect_id = r$effect_id,
              effect_size = r$effect_size,
              hypothesis = r$hypothesis,
@@ -732,6 +844,12 @@ rej_df <- do.call(rbind, lapply(results, function(r) {
              stringsAsFactors = FALSE)
 }))
 rownames(rej_df) <- NULL
+rej_df$is_representative <-
+  rej_df$target %in% REPRESENTATIVE_TARGETS$target
+rej_df$representative_order <- match(
+  rej_df$target,
+  REPRESENTATIVE_TARGETS$target
+)
 
 delta0_rates <- rej_df[
   rej_df$effect_id == "delta0",
@@ -741,6 +859,11 @@ names(delta0_rates)[names(delta0_rates) == "rejection_rate"] <-
   "delta0_rejection_rate"
 gain_key <- paste(rej_df$target, rej_df$method, sep = "\r")
 delta0_key <- paste(delta0_rates$target, delta0_rates$method, sep = "\r")
+if (nrow(delta0_rates) != nrow(TARGETS_DF) * length(EXPECTED_METHODS) ||
+    anyDuplicated(delta0_key)) {
+  stop("Delta0 reference table is not one row per target and method.",
+       call. = FALSE)
+}
 delta0_match <- match(gain_key, delta0_key)
 if (anyNA(delta0_match)) {
   stop("Could not match every target/method row to its delta0 reference.",
@@ -755,80 +878,118 @@ if (any(rej_df$effect_id == "delta0" &
   stop("Delta0 rows must have zero paired rejection gain.", call. = FALSE)
 }
 
-summary_df <- aggregate(
-  cbind(rejection_rate, paired_gain_vs_delta0) ~
-    effect_idx + effect_id + effect_size + hypothesis + method,
-  data = rej_df,
-  FUN = mean
-)
-names(summary_df)[names(summary_df) == "rejection_rate"] <-
-  "mean_rejection_rate"
-names(summary_df)[names(summary_df) == "paired_gain_vs_delta0"] <-
-  "mean_paired_gain_vs_delta0"
-summary_df <- summary_df[
-  order(
-    summary_df$effect_idx,
-    match(summary_df$method, EXPECTED_METHODS)
-  ),
+# The power summary contains one exact cell per representative, grid point, and
+# method. No averaging across targets is performed because each sparsity level
+# deliberately has one representative power curve.
+representative_summary <- rej_df[
+  rej_df$is_representative,
   c(
-    "effect_idx", "effect_id", "effect_size", "hypothesis", "method",
-    "mean_rejection_rate", "mean_paired_gain_vs_delta0"
+    "representative_order", "target_idx", "target", "sparsity_tag", "freq",
+    "s", "grid_idx", "effect_id", "effect_size", "hypothesis", "method",
+    "rejection_rate", "delta0_rejection_rate", "paired_gain_vs_delta0",
+    "na_rate"
   )
 ]
-rownames(summary_df) <- NULL
+representative_summary$n_reps <- EXPECTED_R
+representative_summary <- representative_summary[
+  order(
+    representative_summary$representative_order,
+    representative_summary$grid_idx,
+    match(representative_summary$method, EXPECTED_METHODS)
+  ),
+]
+rownames(representative_summary) <- NULL
+representative_cell_key <- paste(
+  representative_summary$target,
+  representative_summary$grid_idx,
+  representative_summary$method,
+  sep = "\r"
+)
+if (nrow(representative_summary) != 75L ||
+    anyDuplicated(representative_cell_key) ||
+    any(table(representative_summary$target) != 25L) ||
+    any(table(representative_summary$grid_idx) != 15L) ||
+    any(table(representative_summary$method) != 15L) ||
+    any(representative_summary$n_reps != EXPECTED_R)) {
+  stop(
+    "Representative summary is not the exact 3-target by 5-grid by ",
+    "5-method design.",
+    call. = FALSE
+  )
+}
 
-paired_gain_df <- summary_df[
-  summary_df$effect_id != "delta0",
+paired_gain_df <- representative_summary[
+  representative_summary$hypothesis == "alternative",
   c(
-    "effect_idx", "effect_id", "effect_size", "hypothesis", "method",
-    "mean_paired_gain_vs_delta0"
+    "representative_order", "target_idx", "target", "sparsity_tag",
+    "grid_idx", "effect_id", "effect_size", "method", "rejection_rate",
+    "delta0_rejection_rate", "paired_gain_vs_delta0", "n_reps"
   )
 ]
 rownames(paired_gain_df) <- NULL
-
-summary_by_sparsity <- aggregate(
-  cbind(rejection_rate, paired_gain_vs_delta0) ~
-    sparsity_tag + effect_idx + effect_id + effect_size + hypothesis + method,
-  data = rej_df,
-  FUN = mean
-)
-names(summary_by_sparsity)[
-  names(summary_by_sparsity) == "rejection_rate"
-] <- "mean_rejection_rate"
-names(summary_by_sparsity)[
-  names(summary_by_sparsity) == "paired_gain_vs_delta0"
-] <- "mean_paired_gain_vs_delta0"
-summary_by_sparsity$n_targets <- 10L
-summary_by_sparsity$n_reps <- EXPECTED_R
-sparsity_order <- c("low_sparsity", "medium_sparsity", "high_sparsity")
-summary_by_sparsity <- summary_by_sparsity[
-  order(
-    match(summary_by_sparsity$sparsity_tag, sparsity_order),
-    summary_by_sparsity$effect_idx,
-    match(summary_by_sparsity$method, EXPECTED_METHODS)
-  ),
-  c(
-    "sparsity_tag", "effect_idx", "effect_id", "effect_size", "hypothesis",
-    "method", "mean_rejection_rate", "mean_paired_gain_vs_delta0",
-    "n_targets", "n_reps"
-  )
-]
-rownames(summary_by_sparsity) <- NULL
-
-summary_cell_counts <- aggregate(
-  target ~ sparsity_tag + effect_id + method,
-  data = rej_df,
-  FUN = function(x) length(unique(x))
-)
-if (nrow(summary_by_sparsity) !=
-      length(sparsity_order) * nrow(EFFECT_GRID) * length(EXPECTED_METHODS) ||
-    nrow(summary_cell_counts) != nrow(summary_by_sparsity) ||
-    any(summary_cell_counts$target != 10L) ||
-    any(summary_by_sparsity$n_targets != 10L) ||
-    any(summary_by_sparsity$n_reps != EXPECTED_R)) {
-  stop("Sparsity-by-effect summary cells must contain exactly 10 targets.",
+if (nrow(paired_gain_df) != 60L) {
+  stop("Expected exactly 60 nonnull representative paired-gain cells.",
        call. = FALSE)
 }
+
+# Null calibration is still summarized over all 10 targets in each canonical
+# group; this is separate from the representative-only power curves.
+null_rej_df <- rej_df[rej_df$hypothesis == "null", ]
+null_summary_by_sparsity <- aggregate(
+  rejection_rate ~ sparsity_tag + method,
+  data = null_rej_df,
+  FUN = mean
+)
+names(null_summary_by_sparsity)[
+  names(null_summary_by_sparsity) == "rejection_rate"
+] <- "mean_rejection_rate"
+sparsity_order <- c("low_sparsity", "medium_sparsity", "high_sparsity")
+null_summary_by_sparsity$n_targets <- N_PER_BIN
+null_summary_by_sparsity$n_reps_per_target <- EXPECTED_R
+null_summary_by_sparsity <- null_summary_by_sparsity[
+  order(
+    match(null_summary_by_sparsity$sparsity_tag, sparsity_order),
+    match(null_summary_by_sparsity$method, EXPECTED_METHODS)
+  ),
+  c(
+    "sparsity_tag", "method", "mean_rejection_rate", "n_targets",
+    "n_reps_per_target"
+  )
+]
+rownames(null_summary_by_sparsity) <- NULL
+null_cell_counts <- aggregate(
+  target ~ sparsity_tag + method,
+  data = null_rej_df,
+  FUN = function(x) length(unique(x))
+)
+if (nrow(null_summary_by_sparsity) !=
+      length(sparsity_order) * length(EXPECTED_METHODS) ||
+    nrow(null_cell_counts) != nrow(null_summary_by_sparsity) ||
+    any(null_cell_counts$target != N_PER_BIN) ||
+    any(null_summary_by_sparsity$n_targets != N_PER_BIN) ||
+    any(null_summary_by_sparsity$n_reps_per_target != EXPECTED_R)) {
+  stop("Null sparsity-by-method summary cells must contain 10 targets.",
+       call. = FALSE)
+}
+
+null_summary_by_method <- aggregate(
+  rejection_rate ~ method,
+  data = null_rej_df,
+  FUN = mean
+)
+names(null_summary_by_method)[
+  names(null_summary_by_method) == "rejection_rate"
+] <- "mean_rejection_rate"
+null_summary_by_method$n_targets <- nrow(TARGETS_DF)
+null_summary_by_method$n_reps_per_target <- EXPECTED_R
+null_summary_by_method <- null_summary_by_method[
+  order(match(null_summary_by_method$method, EXPECTED_METHODS)),
+]
+rownames(null_summary_by_method) <- NULL
+
+canonical_targets <- TARGETS_DF[, c("target_idx", "target", "tag", "freq")]
+names(canonical_targets)[names(canonical_targets) == "tag"] <- "sparsity_tag"
+setup_table <- SETUPS
 
 combined <- list(
   schema_version = SCHEMA_VERSION,
@@ -836,18 +997,22 @@ combined <- list(
   calibration_design = CALIBRATION_DESIGN,
   matched_calibration = TRUE,
   n_targets = nrow(TARGETS_DF),
+  n_representatives = nrow(REPRESENTATIVE_TARGETS),
+  n_null_setups = nrow(TARGETS_DF),
+  n_alternative_setups = nrow(SETUPS) - nrow(TARGETS_DF),
   n_setups = length(results),
   fixed_s = FIXED_S,
-  effect_grid = EFFECT_GRID,
-  effect_ids = EFFECT_GRID$effect_id,
-  effect_sizes = stats::setNames(EFFECT_GRID$effect_size, EFFECT_GRID$effect_id),
-  hypotheses = stats::setNames(EFFECT_GRID$hypothesis, EFFECT_GRID$effect_id),
+  canonical_targets = canonical_targets,
+  representative_targets = REPRESENTATIVE_TARGETS,
+  representative_effect_grid = REPRESENTATIVE_EFFECT_GRID,
+  setup_table = setup_table,
   effect_scale = EFFECT_SCALE,
-  setup_order = "effect_major_then_target",
+  setup_order = SETUP_ORDER,
   paired_seed_indices = seq_len(nrow(TARGETS_DF)) + nrow(TARGETS_DF),
   seed_pairing = list(
     formula = "paired_seed_idx = target_idx + 30",
     reference_effect_id = "delta0",
+    paired_targets = REPRESENTATIVE_TARGETS$target,
     paired_across_effect_sizes = TRUE,
     component_fields = seed_fields
   ),
@@ -861,9 +1026,10 @@ combined <- list(
   statistics = EXPECTED_STATISTICS,
   method_definition = reference_definition,
   package_versions = reference_versions,
-  summary_by_effect_method = summary_df,
-  paired_gain_vs_delta0_by_effect_method = paired_gain_df,
-  summary_by_sparsity_effect_method = summary_by_sparsity,
+  summary_by_representative_effect_method = representative_summary,
+  paired_gain_vs_delta0_by_representative_effect_method = paired_gain_df,
+  null_summary_by_sparsity_method = null_summary_by_sparsity,
+  null_summary_by_method = null_summary_by_method,
   results = results
 )
 combined_path <- file.path(
@@ -955,8 +1121,10 @@ publish_pair(combined_tmp, combined_path, rejection_tmp, rejection_path)
 
 cat("=== Combined paired matched-calibration v4 summary (", length(results),
     " setups) ===\n", sep = "")
-cat("Mean rejection rate and paired gain per (effect, method):\n")
-print(summary_df)
+cat("Representative rejection rates and paired gains by target/grid/method:\n")
+print(representative_summary)
+cat("\nAll-target delta0 mean rejection rates by sparsity group/method:\n")
+print(null_summary_by_sparsity)
 cat("\nSaved:\n")
 cat("  ", combined_path, "\n")
 cat("  ", rejection_path, "\n")
