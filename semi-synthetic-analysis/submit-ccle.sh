@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
 # Run or submit 42 matched-v4 CCLE null/representative-effect jobs.
-# Power representatives are RIOK3_MUT (high sparsity), PLK1_MUT (medium), and
+# Power representatives are EIF5A_MUT (high sparsity), PLK1_MUT (medium), and
 # ATP11A_MUT (low sparsity); all 30 targets retain their delta = 0 job.
 #
 # Usage:
 #   bash reproduction-code/semi-synthetic-analysis/submit-ccle.sh
 #   bash reproduction-code/semi-synthetic-analysis/submit-ccle.sh --local
 #   bash reproduction-code/semi-synthetic-analysis/submit-ccle.sh --sge
+#   bash reproduction-code/semi-synthetic-analysis/submit-ccle.sh --local --force
 #
 # With no argument, the script defaults to --sge.
 # --local runs each setup synchronously. It is used by the repository-level
@@ -19,34 +20,60 @@
 #   PROJECT    SGE project (default: stat_bhaswar_team)
 #   MEM        m_mem_free request (default: 8G)
 #   N_SETUPS   number of setup indices to dispatch (default: 42)
+# For either mode, --force (or CCLE_FORCE_RERUN=1) explicitly reruns every
+# selected setup and permits its worker to atomically replace an existing
+# expected output. Without it, valid outputs are skipped and malformed outputs
+# fail closed without being changed.
 
 set -euo pipefail
 
 usage() {
   cat <<'USAGE'
-Usage: submit-ccle.sh [--local|--sge]
+Usage: submit-ccle.sh [--local|--sge] [--force]
 
   no option  Submit one Grid Engine job per setup (same as --sge).
-  --local  Run all setup indices synchronously in the current process.
-  --sge    Submit one Grid Engine job per setup and return immediately.
+  --local    Run only missing setup indices synchronously.
+  --sge      Submit one Grid Engine job per missing setup index and return.
+  --force    Rerun every selected setup, replacing reviewed existing outputs.
 USAGE
 }
 
-if [[ $# -gt 1 ]]; then
+if [[ $# -gt 2 ]]; then
   usage >&2
   exit 2
 fi
 
-mode=${1:---sge}
-if [[ "$mode" != "--local" && "$mode" != "--sge" ]]; then
-  usage >&2
+mode=--sge
+mode_was_set=0
+force_rerun=${CCLE_FORCE_RERUN:-0}
+if [[ "$force_rerun" != "0" && "$force_rerun" != "1" ]]; then
+  echo "ERROR: CCLE_FORCE_RERUN must be exactly 0 or 1." >&2
   exit 2
 fi
+for option in "$@"; do
+  case "$option" in
+    --local|--sge)
+      if (( mode_was_set )); then
+        usage >&2
+        exit 2
+      fi
+      mode=$option
+      mode_was_set=1
+      ;;
+    --force)
+      force_rerun=1
+      ;;
+    *)
+      usage >&2
+      exit 2
+      ;;
+  esac
+done
 
 # Load the lab configuration when available. Required values are embedded
 # explicitly in each job script; the full login environment is not sent to
 # Grid Engine.
-if [[ -f "$HOME/.research_config" ]]; then
+if [[ -z "${LOCAL_PDRT_DATA_DIR:-}" && -f "$HOME/.research_config" ]]; then
   # shellcheck disable=SC1090
   source "$HOME/.research_config"
 fi
@@ -59,6 +86,7 @@ fi
 script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 project_root=$(cd -- "$script_dir/../.." && pwd)
 runner="$script_dir/ccle-typeI-synthY-30targets.R"
+combiner="$script_dir/combine-ccle-results.R"
 
 data_root=$LOCAL_PDRT_DATA_DIR
 if [[ "$data_root" != /* ]]; then
@@ -79,13 +107,19 @@ for input_file in mutation.txt response.csv; do
 done
 
 n_setups=${N_SETUPS:-42}
-if [[ ! "$n_setups" =~ ^[1-9][0-9]*$ ]] || (( n_setups > 42 )); then
-  echo "ERROR: N_SETUPS must be an integer from 1 through 42." >&2
+if [[ ! "$n_setups" =~ ^([1-9]|[1-3][0-9]|4[0-2])$ ]]; then
+  echo "ERROR: N_SETUPS must be a canonical integer from 1 through 42." >&2
   exit 2
 fi
+n_setups_decimal=$((10#$n_setups))
+n_setups=$n_setups_decimal
 
 if [[ ! -f "$runner" ]]; then
   echo "ERROR: Runner script not found: $runner" >&2
+  exit 1
+fi
+if [[ ! -f "$combiner" ]]; then
+  echo "ERROR: Combiner/status script not found: $combiner" >&2
   exit 1
 fi
 if ! command -v Rscript >/dev/null 2>&1; then
@@ -103,14 +137,104 @@ echo "Result namespace:    matched-v4-representative-effect-grid-s10"
 echo "Number of setups:    $n_setups"
 echo "LOCAL_PDRT_DATA_DIR: $data_root"
 echo "Rscript:             $rscript_bin"
+echo "Force rerun:         $force_rerun"
+
+status_file=$(mktemp "${TMPDIR:-/tmp}/ccle-v4-output-status.XXXXXX")
+cleanup_status_file() {
+  rm -f -- "$status_file"
+}
+trap cleanup_status_file EXIT
+
+cd "$project_root"
+"$rscript_bin" "$combiner" --output-status "$status_file" "$n_setups" \
+  >/dev/null
+
+pending_indices=()
+valid_count=0
+missing_count=0
+invalid_count=0
+invalid_detail_limit=10
+status_count=0
+while IFS=$'\t' read -r setup_idx state filename reason; do
+  ((status_count += 1))
+  case "$state" in
+    valid)
+      ((valid_count += 1))
+      if (( force_rerun )); then
+        pending_indices+=("$setup_idx")
+      fi
+      ;;
+    missing)
+      ((missing_count += 1))
+      pending_indices+=("$setup_idx")
+      ;;
+    invalid)
+      ((invalid_count += 1))
+      if (( force_rerun )); then
+        if (( invalid_count <= invalid_detail_limit )); then
+          echo "WARNING: setup $setup_idx has an invalid expected output:" >&2
+          echo "  $filename" >&2
+          echo "  $reason" >&2
+        fi
+        pending_indices+=("$setup_idx")
+      else
+        if (( invalid_count <= invalid_detail_limit )); then
+          echo "ERROR: setup $setup_idx has an invalid expected output:" >&2
+          echo "  $filename" >&2
+          echo "  $reason" >&2
+        fi
+      fi
+      ;;
+    *)
+      echo "ERROR: Unrecognized output-status state for setup $setup_idx: $state" >&2
+      exit 1
+      ;;
+  esac
+done < "$status_file"
+
+if (( invalid_count > invalid_detail_limit )); then
+  echo "... $((invalid_count - invalid_detail_limit)) more invalid output(s) omitted." >&2
+fi
+
+if (( status_count != n_setups )); then
+  echo "ERROR: Combiner returned $status_count status rows; expected $n_setups." >&2
+  exit 1
+fi
+if (( invalid_count > 0 && ! force_rerun )); then
+  echo "ERROR: Refusing to overwrite $invalid_count invalid output(s)." >&2
+  echo "Review them, then use --force or CCLE_FORCE_RERUN=1 to rerun explicitly." >&2
+  exit 1
+fi
+
+pending_count=${#pending_indices[@]}
+echo "Validated existing:  $valid_count"
+echo "Missing outputs:     $missing_count"
+echo "Invalid outputs:     $invalid_count"
+if (( force_rerun )); then
+  echo "Setups forced:       $pending_count"
+else
+  echo "Setups to run:       $pending_count"
+fi
+
+if (( pending_count == 0 )); then
+  echo "All $n_setups selected CCLE setup outputs are already valid; nothing to run."
+  exit 0
+fi
+
+export CCLE_FORCE_RERUN="$force_rerun"
 
 if [[ "$mode" == "--local" ]]; then
-  cd "$project_root"
-  for ((setup_idx = 1; setup_idx <= n_setups; setup_idx++)); do
-    echo "Running CCLE setup $setup_idx/$n_setups ..."
+  pending_position=0
+  for setup_idx in "${pending_indices[@]}"; do
+    ((pending_position += 1))
+    echo "Running CCLE setup $setup_idx ($pending_position/$pending_count pending) ..."
     "$rscript_bin" "$runner" "$setup_idx"
   done
-  echo "Completed $n_setups CCLE setup(s)."
+  if (( force_rerun )); then
+    echo "Completed $pending_count explicitly forced CCLE setup(s)."
+  else
+    echo "Completed $pending_count CCLE setup(s); skipped $valid_count valid output(s)."
+  fi
   exit 0
 fi
 
@@ -124,11 +248,12 @@ memory=${MEM:-8G}
 echo "SGE project:         $sge_project"
 echo "Memory per job:      $memory"
 
-for ((setup_idx = 1; setup_idx <= n_setups; setup_idx++)); do
+for setup_idx in "${pending_indices[@]}"; do
   job_name="ccle_matched_v4_${setup_idx}"
   printf -v job_body \
-    '#!/usr/bin/env bash\nset -euo pipefail\nexport LOCAL_PDRT_DATA_DIR=%q\nexport RENV_CONFIG_SANDBOX_ENABLED=FALSE\ncd -- %q\nexec %q %q %q\n' \
-    "$data_root" "$project_root" "$rscript_bin" "$runner" "$setup_idx"
+    '#!/usr/bin/env bash\nset -euo pipefail\nexport LOCAL_PDRT_DATA_DIR=%q\nexport RENV_CONFIG_SANDBOX_ENABLED=FALSE\nexport CCLE_FORCE_RERUN=%q\ncd -- %q\nexec %q %q %q\n' \
+    "$data_root" "$force_rerun" "$project_root" "$rscript_bin" "$runner" \
+    "$setup_idx"
   printf '%s' "$job_body" | qsub \
     -P "$sge_project" \
     -l "m_mem_free=$memory" \
@@ -136,7 +261,11 @@ for ((setup_idx = 1; setup_idx <= n_setups; setup_idx++)); do
     -N "$job_name"
 done
 
-echo "Submitted $n_setups CCLE setup job(s)."
+if (( force_rerun )); then
+  echo "Submitted $pending_count explicitly forced CCLE setup job(s)."
+else
+  echo "Submitted $pending_count CCLE setup job(s); skipped $valid_count valid output(s)."
+fi
 echo "After they finish, run: ./run_all_semi_synthetic.sh plot-only"
 echo "If the matched-v4 combined result is absent, the root runner will"
 echo "strictly validate and combine all 42 matched-v4 setup files before plotting."

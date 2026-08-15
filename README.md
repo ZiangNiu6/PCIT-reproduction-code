@@ -97,11 +97,11 @@ requires all 27,000 matched outputs before it can replace the manuscript
 figure. Legacy `pcm-additive` results are never accepted by this plotter.
 
 The complete CCLE workflow runs locally by default. It first runs a small,
-data-independent matched-calibration smoke test, then runs 30 null targets and
+data-independent matched-calibration smoke test, then resumes the 30 null and
 12 nonnull representative-target settings at `s = 10` (42 jobs total),
 strictly combines them, and regenerates the figures. The domain-level
-`submit-ccle.sh` supports asynchronous SGE submission for the full rerun; see
-the CCLE instructions below. The complete Frangieh workflow requires an SGE
+`submit-ccle.sh` supports the same missing-only resume behavior for asynchronous
+SGE submission; see the CCLE instructions below. The complete Frangieh workflow requires an SGE
 cluster and the processed `ondisc` data. The `plot-only` workflows require
 only the corresponding saved result files. Supplying fewer than 20 Frangieh
 replicates is useful for a cluster test, but the postprocessor deliberately
@@ -127,20 +127,20 @@ contract.
 The v4 design fixes the synthetic-response active-set size at `s = 10` and
 retains one `delta = 0` null setting for each of the 30 mutation targets used
 in the paper's calibration analysis. Nonzero effects are run only for the
-three conditional-effect representatives: `RIOK3_MUT` (high sparsity/rare),
+three conditional-effect representatives: `EIF5A_MUT` (high sparsity/rare),
 `PLK1_MUT` (medium sparsity), and `ATP11A_MUT` (low sparsity/common). Their
 paired grids are
 
 ```text
 Y^(delta) = mu(Z) + epsilon + delta * sigma * X_j
-RIOK3_MUT:  delta in {0, 1, 2, 3, 4}
+EIF5A_MUT:  delta in {0, 1, 2, 3, 4}
 PLK1_MUT:   delta in {0, 0.5, 1, 1.5, 2}
 ATP11A_MUT: delta in {0, 0.5, 1, 1.5, 2}
 ```
 
 `CHIC2_MUT` remains the high-sparsity representative in the paper's null
 calibration and p-value-quantile figures. Only the v4 conditional-effect
-diagnostic replaces it with `RIOK3_MUT`.
+diagnostic replaces it with the four-carrier target `EIF5A_MUT`.
 
 Thus each nonzero effect is a `delta`-noise-SD per-carrier shift and differs
 from that target's paired null only through the added target effect: the active
@@ -176,8 +176,19 @@ For a local full rerun, use
 ./run_all_semi_synthetic.sh full
 ```
 
+This command is resumable: before dispatch, the combiner's strict per-record
+validator checks every expected output. Valid setup files are skipped and only
+missing setup indices are run. Malformed, stale, heterogeneous, or wrong-setup
+files fail closed and are left unchanged; obsolete unexpected matched-v4 files
+must be moved out of the result namespace. To deliberately replace all 42
+reviewed expected outputs, use
+
+```bash
+./run_all_semi_synthetic.sh full --force
+```
+
 For an SGE rerun, first restore the repository environment, run the smoke
-test, and then submit one job per setup:
+test, and then submit jobs for the missing setup indices:
 
 ```bash
 RENV_CONFIG_SANDBOX_ENABLED=FALSE Rscript -e 'renv::restore(prompt = FALSE)'
@@ -185,14 +196,23 @@ Rscript reproduction-code/semi-synthetic-analysis/smoke-test-matched-calibration
 bash reproduction-code/semi-synthetic-analysis/submit-ccle.sh
 ```
 
-The submission script automatically sources `~/.research_config`, resolves
-the absolute `Rscript` path, and embeds only that executable and
+The same command can be rerun safely after an interrupted array: strictly valid
+outputs are skipped. `--force` (or `CCLE_FORCE_RERUN=1`) explicitly submits all
+selected indices and permits their workers to replace reviewed expected files;
+it does not authorize an obsolete unexpected filename, which must first be
+moved out of the namespace.
+
+The submission script sources `~/.research_config` only when
+`LOCAL_PDRT_DATA_DIR` is not already set, resolves the absolute `Rscript` path,
+and embeds only that executable and
 `LOCAL_PDRT_DATA_DIR` in each job script. Each worker starts in the project
 root, where the project's `.Rprofile` activates `renv`. The launcher
 deliberately avoids `qsub -V` and does not forward the full login environment.
 The configured paths must be visible at the same location on every compute
 node. `PROJECT` and `MEM` optionally override the SGE project and per-job
-memory request. After all 42 jobs have finished successfully, run
+memory request. If all selected outputs are already valid, SGE mode exits
+successfully without requiring `qsub`. After all 42 jobs have finished
+successfully, run
 
 ```bash
 ./run_all_semi_synthetic.sh plot-only
@@ -205,7 +225,7 @@ plotter validates the exact 30 nulls, the three target-specific five-point
 grids, and within-target pairing. It uses only `delta = 0` for the unchanged
 null-calibration figures and writes
 `ccle-alternative-synthY-30targets-rejection.pdf`. That GCM-only diagnostic
-shows separate RIOK3, PLK1, and ATP11A curves on one common absolute effect
+shows separate EIF5A, PLK1, and ATP11A curves on one common absolute effect
 axis from 0 to 4; the panel labels state each target's actual grid. It displays
 raw rejection at the nominal `0.05` cutoff over `delta`, including the paired
 null. Because the methods can have different null rejection rates, this is not
@@ -257,16 +277,18 @@ summaries contain nominal rejection rates, paired gains over effect zero, and Mo
 Carlo standard errors; the combined RDS also retains validated raw rows and
 full method, seed, preflight, and package provenance.
 
-The pilot considered all eight candidates independently of the production
-replicates. Although the rare/high-sparsity group's mean rejection remained
-low at `delta = 2`, `RIOK3_MUT` had a clearly visible asymptotic-GCM rejection
-rate (`15/25 = 0.60`) at that effect and no pilot rejection at `delta = 0`.
-This pilot-guided target choice must be confirmed by the independent `R = 500`
-production run. The production grids are `0, 1, 2, 3, 4` for `RIOK3_MUT` and
-`0, 0.5, 1, 1.5, 2` for `PLK1_MUT` and `ATP11A_MUT`; nonzero effects are not
-run for the other 27 targets. Production plots show both asymptotic and
-permutation GCM, whereas the asymptotic-only pilot itself is never presented
-as confirmatory power evidence.
+The pilot considered all eight effect sizes independently of the production
+replicates. For target screening, the four-carrier `EIF5A_MUT` was also checked
+on `delta = 0, 1, 2, 3, 4` with `R = 25`. Its asymptotic-GCM nominal rejection
+rates were `0, 0.08, 0.16, 0.24, 0.40`; a local adaptive-permutation GCM check
+gave `0.04, 0.12, 0.32, 0.48, 0.56`. These estimates have wide Monte Carlo
+uncertainty and are used only to screen the illustrative target and grid. The
+choice must be confirmed by the independent `R = 500` production run, and no
+pilot replicates are pooled with it. The production grids are `0, 1, 2, 3, 4`
+for `EIF5A_MUT` and `0, 0.5, 1, 1.5, 2` for `PLK1_MUT` and `ATP11A_MUT`;
+nonzero effects are not run for the other 27 targets. Production plots show
+both asymptotic and permutation GCM; neither screening check is presented as
+confirmatory power evidence.
 
 For auditability, the `R = 25` selection-only equal-target asymptotic-GCM
 nominal rejection rates were:

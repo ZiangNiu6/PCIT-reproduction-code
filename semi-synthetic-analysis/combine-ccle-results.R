@@ -12,7 +12,7 @@
 # deterministic targets as the runner: it samples 10 targets from each
 # frequency tercile of the screened mutations using SAMPLE_SEED = 2026. All 30
 # targets have a delta0 job. Power is evaluated only for three pre-specified
-# representatives, in high-/medium-/low-sparsity display order: RIOK3_MUT on
+# representatives, in high-/medium-/low-sparsity display order: EIF5A_MUT on
 # {0, 1, 2, 3, 4}, and PLK1_MUT / ATP11A_MUT on {0, .5, 1, 1.5, 2}. Setup IDs
 # 31:42 are grid-index-major across those three representatives.
 #
@@ -36,12 +36,12 @@ EFFECT_SCALE       <- "noise_sd_equals_sd_mu"
 SETUP_ORDER <- "null_all_targets_then_grid_index_major_representatives"
 REPRESENTATIVE_EXPECTATIONS <- data.frame(
   representative_order = seq_len(3L),
-  target = c("RIOK3_MUT", "PLK1_MUT", "ATP11A_MUT"),
+  target = c("EIF5A_MUT", "PLK1_MUT", "ATP11A_MUT"),
   sparsity_tag = c("low_sparsity", "medium_sparsity", "high_sparsity"),
   stringsAsFactors = FALSE
 )
 REPRESENTATIVE_EFFECT_SIZES <- list(
-  RIOK3_MUT = c(0, 1, 2, 3, 4),
+  EIF5A_MUT = c(0, 1, 2, 3, 4),
   PLK1_MUT = c(0, 0.5, 1, 1.5, 2),
   ATP11A_MUT = c(0, 0.5, 1, 1.5, 2)
 )
@@ -74,6 +74,38 @@ EXPECTED_SEED_COMPONENT_OFFSETS <- c(
   pcm_YhatonZ_seed = 9L,
   pcm_RonZ_seed = 10L
 )
+
+cli_args <- commandArgs(trailingOnly = TRUE)
+status_mode <- FALSE
+status_path <- NULL
+status_indices <- integer()
+if (length(cli_args)) {
+  if (length(cli_args) != 3L ||
+      !identical(cli_args[[1L]], "--output-status")) {
+    stop(
+      "Usage: Rscript combine-ccle-results.R ",
+      "[--output-status <path> <n>]",
+      call. = FALSE
+    )
+  }
+  index_text <- cli_args[[3L]]
+  if (!grepl("^[1-9][0-9]*$", index_text)) {
+    stop("Status setup count/index must be a canonical integer in 1..42",
+         call. = FALSE)
+  }
+  index_value <- as.integer(index_text)
+  if (is.na(index_value) || index_value > 42L) {
+    stop("Status setup count/index must be a canonical integer in 1..42",
+         call. = FALSE)
+  }
+  status_mode <- TRUE
+  status_path <- path.expand(cli_args[[2L]])
+  if (!dir.exists(dirname(status_path))) {
+    stop("Status-output directory does not exist: ", dirname(status_path),
+         call. = FALSE)
+  }
+  status_indices <- seq_len(index_value)
+}
 
 data_root <- Sys.getenv("LOCAL_PDRT_DATA_DIR", unset = "")
 if (!nzchar(data_root)) {
@@ -270,7 +302,7 @@ expected_files <- file.path(
   )
 )
 missing <- expected_files[!file.exists(expected_files)]
-if (length(missing)) {
+if (length(missing) && !status_mode) {
   stop(
     "Missing paired matched-calibration v4 per-setup files (", length(missing),
     " of ", length(expected_files), "):\n  ",
@@ -286,14 +318,17 @@ actual_v4_files <- list.files(
   full.names = TRUE
 )
 unexpected <- setdiff(
-  normalizePath(actual_v4_files, mustWork = TRUE),
-  normalizePath(expected_files, mustWork = TRUE)
+  basename(actual_v4_files),
+  basename(expected_files)
 )
 if (length(unexpected)) {
   stop(
     "Unexpected matched-v4 per-setup file(s); the directory must contain ",
     "exactly the canonical 42-file null-plus-representative grid:\n  ",
-    paste(head(unexpected, 20L), collapse = "\n  "),
+    paste(
+      head(file.path(bpath, unexpected), 20L),
+      collapse = "\n  "
+    ),
     if (length(unexpected) > 20L) "\n  ..." else "",
     call. = FALSE
   )
@@ -665,6 +700,140 @@ validate_record <- function(rec, setup_idx, path) {
          call. = FALSE)
   }
   invisible(TRUE)
+}
+
+if (status_mode) {
+  statuses <- lapply(status_indices, function(i) {
+    path <- expected_files[[i]]
+    if (!file.exists(path)) {
+      return(list(
+        state = "missing",
+        reason = "expected output is absent",
+        package_versions = NULL,
+        method_definition = NULL
+      ))
+    }
+    failure <- tryCatch({
+      obj <- readRDS(path)
+      if (!is.list(obj) || length(obj) != 1L || !is.list(obj[[1L]])) {
+        stop("Malformed per-setup result: ", path, call. = FALSE)
+      }
+      rec <- obj[[1L]]
+      validate_record(rec, i, path)
+      NULL
+    }, error = function(e) conditionMessage(e))
+    if (is.null(failure)) {
+      list(
+        state = "valid",
+        reason = "passed the strict per-record v4 validator",
+        package_versions = obj[[1L]]$package_versions,
+        method_definition = obj[[1L]]$method_definition
+      )
+    } else {
+      list(
+        state = "invalid",
+        reason = gsub("[\t\r\n]+", " ", failure),
+        package_versions = NULL,
+        method_definition = NULL
+      )
+    }
+  })
+
+  valid_indices <- which(vapply(
+    statuses, function(status) identical(status$state, "valid"), logical(1L)
+  ))
+  heterogeneous_versions <- FALSE
+  heterogeneous_definitions <- FALSE
+  if (length(valid_indices) > 1L) {
+    reference_versions <- statuses[[valid_indices[[1L]]]]$package_versions
+    reference_definition <- statuses[[valid_indices[[1L]]]]$method_definition
+    heterogeneous_versions <- !all(vapply(
+      valid_indices,
+      function(i) identical(statuses[[i]]$package_versions, reference_versions),
+      logical(1L)
+    ))
+    heterogeneous_definitions <- !all(vapply(
+      valid_indices,
+      function(i) identical(
+        statuses[[i]]$method_definition, reference_definition
+      ),
+      logical(1L)
+    ))
+  }
+  if (heterogeneous_versions || heterogeneous_definitions) {
+    heterogeneous_fields <- c(
+      if (heterogeneous_versions) "package_versions",
+      if (heterogeneous_definitions) "method_definition"
+    )
+    heterogeneity_reason <- paste0(
+      "selected individually valid records are heterogeneous in ",
+      paste(heterogeneous_fields, collapse = " and "),
+      "; all selected valid records are invalidated for a coherent rerun"
+    )
+    for (i in valid_indices) {
+      statuses[[i]]$state <- "invalid"
+      statuses[[i]]$reason <- heterogeneity_reason
+    }
+  }
+
+  ## A partial resume must not mix newly generated records with otherwise-valid
+  ## records from a different runtime. Fully complete, internally homogeneous
+  ## results remain eligible for the ordinary no-argument combiner.
+  if (any(vapply(
+        statuses, function(status) !identical(status$state, "valid"),
+        logical(1L)
+      ))) {
+    current_versions <- c(
+      R = R.version.string,
+      pcmt = as.character(utils::packageVersion("pcmt")),
+      comets = as.character(utils::packageVersion("comets")),
+      ranger = as.character(utils::packageVersion("ranger"))
+    )
+    for (i in seq_along(statuses)) {
+      if (identical(statuses[[i]]$state, "valid") &&
+          !identical(statuses[[i]]$package_versions, current_versions)) {
+        statuses[[i]]$state <- "invalid"
+        statuses[[i]]$reason <- paste0(
+          "package versions differ from the current runtime while selected ",
+          "outputs are incomplete (stored: ",
+          paste(
+            paste0(
+              names(statuses[[i]]$package_versions), "=",
+              statuses[[i]]$package_versions
+            ),
+            collapse = ", "
+          ),
+          "; current: ",
+          paste(
+            paste0(names(current_versions), "=", current_versions),
+            collapse = ", "
+          ),
+          ")"
+        )
+      }
+    }
+  }
+
+  status_rows <- do.call(rbind, lapply(seq_along(status_indices), function(j) {
+    i <- status_indices[[j]]
+    data.frame(
+      setup_idx = i,
+      state = statuses[[j]]$state,
+      filename = basename(expected_files[[i]]),
+      reason = statuses[[j]]$reason,
+      stringsAsFactors = FALSE
+    )
+  }))
+  write.table(
+    status_rows,
+    file = status_path,
+    sep = "\t",
+    quote = FALSE,
+    row.names = FALSE,
+    col.names = FALSE,
+    na = ""
+  )
+  quit(save = "no", status = 0L)
 }
 
 for (i in seq_along(expected_files)) {

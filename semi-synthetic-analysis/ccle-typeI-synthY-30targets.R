@@ -8,14 +8,14 @@
 #
 #   * 10 targets sampled from each frequency tercile of the screened mutations
 #     (low / medium / high sparsity) at delta = 0 ->  30 null setups
-#   * RIOK3_MUT effects in {1, 2, 3, 4}           ->   4 alternatives
+#   * EIF5A_MUT effects in {1, 2, 3, 4}           ->   4 alternatives
 #   * PLK1_MUT and ATP11A_MUT effects in
 #     {.5, 1, 1.5, 2}                             ->   8 alternatives
 #   * 30 + 12 = 42 setups, each with R = 500 reps
 #
 # The runner takes one CLI integer in 1..42. Setups 1:30 are the complete null
 # sweep in the old target order. Setups 31:42 are ordered by within-target grid
-# index, then RIOK3_MUT / PLK1_MUT / ATP11A_MUT. All effects for a target use
+# index, then EIF5A_MUT / PLK1_MUT / ATP11A_MUT. All effects for a target use
 # the old matched-v2 s=10 seed index, pairing their generated outcomes, splits,
 # permutation streams, and RF streams. Legacy files are left untouched:
 #
@@ -70,13 +70,13 @@ EFFECT_LOOKUP <- data.frame(
 )
 REPRESENTATIVE_TARGETS <- data.frame(
   representative_order = seq_len(3L),
-  target = c("RIOK3_MUT", "PLK1_MUT", "ATP11A_MUT"),
+  target = c("EIF5A_MUT", "PLK1_MUT", "ATP11A_MUT"),
   expected_tag = c("low_sparsity", "medium_sparsity", "high_sparsity"),
-  expected_target_idx = c(9L, 15L, 22L),
+  expected_target_idx = c(4L, 15L, 22L),
   stringsAsFactors = FALSE
 )
 REPRESENTATIVE_EFFECT_SIZES <- rbind(
-  RIOK3_MUT = c(0, 1, 2, 3, 4),
+  EIF5A_MUT = c(0, 1, 2, 3, 4),
   PLK1_MUT = c(0, 0.5, 1, 1.5, 2),
   ATP11A_MUT = c(0, 0.5, 1, 1.5, 2)
 )
@@ -229,6 +229,7 @@ stopifnot(
   identical(SETUPS$effect_id[1:30], rep("delta0", 30L)),
   identical(as.numeric(SETUPS$effect_size[1:30]), rep(0, 30L)),
   identical(SETUPS$hypothesis[1:30], rep("null", 30L)),
+  all(c("CHIC2_MUT", "RIOK3_MUT") %in% SETUPS$target[1:30]),
   identical(
     SETUPS$target[31:42], rep(REPRESENTATIVE_TARGETS$target, 4L)
   ),
@@ -238,7 +239,7 @@ stopifnot(
   identical(
     as.integer(SETUPS$target_idx[31:42]), rep(representative_idx, 4L)
   ),
-  identical(as.integer(representative_idx), c(9L, 15L, 22L)),
+  identical(as.integer(representative_idx), c(4L, 15L, 22L)),
   identical(
     as.numeric(SETUPS$effect_size[31:42]),
     as.numeric(REPRESENTATIVE_EFFECT_SIZES[, 2:5, drop = FALSE])
@@ -254,11 +255,23 @@ stopifnot(
   ),
   identical(
     as.integer(SETUPS$paired_seed_idx[seq(31L, 42L, by = 3L)]),
-    rep(39L, 4L)
+    rep(34L, 4L)
   ),
   all(as.integer(SETUPS$s) == S_FIXED),
   all(SETUPS$effect_scale == EFFECT_SCALE)
 )
+
+ccle_expected_output_path <- function(setup_idx) {
+  setup <- SETUPS[setup_idx, , drop = FALSE]
+  file.path(
+    bpath,
+    sprintf(
+      "ccle-typeI-synthY-30targets-matched-v4-results-%s-%s-s10.rds",
+      setup$target,
+      setup$effect_id
+    )
+  )
+}
 
 cat(sprintf("Tercile cutoffs: q1/3 = %.4f, q2/3 = %.4f\n", qs[1], qs[2]))
 cat(sprintf("Pool sizes: low=%d, medium=%d, high=%d\n",
@@ -268,11 +281,28 @@ cat(sprintf("Sampled %d targets per bin; %d total null/representative setups.\n"
 
 # ---- 3. CLI: setup index 1..N_SETUPS ----
 cli_args <- commandArgs(trailingOnly = TRUE)
-if (length(cli_args) < 1L)
-  stop("Usage: Rscript ccle-typeI-synthY-30targets.R <setup_idx in 1..", N_SETUPS, ">")
-setup_idx <- suppressWarnings(as.integer(cli_args[[1L]]))
-if (is.na(setup_idx) || setup_idx < 1L || setup_idx > N_SETUPS)
-  stop("setup_idx must be an integer in 1..", N_SETUPS, " (got: ", cli_args[[1L]], ")")
+if (length(cli_args) != 1L) {
+  stop(
+    "Usage: Rscript ccle-typeI-synthY-30targets.R ",
+    "<setup_idx in 1..", N_SETUPS, ">",
+    call. = FALSE
+  )
+}
+if (!grepl("^[1-9][0-9]*$", cli_args[[1L]])) {
+  stop("setup_idx must be a canonical integer in 1..", N_SETUPS,
+       " (got: ", cli_args[[1L]], ")", call. = FALSE)
+}
+setup_idx <- as.integer(cli_args[[1L]])
+if (is.na(setup_idx) || setup_idx > N_SETUPS) {
+  stop("setup_idx must be a canonical integer in 1..", N_SETUPS,
+       " (got: ", cli_args[[1L]], ")", call. = FALSE)
+}
+
+force_rerun_text <- Sys.getenv("CCLE_FORCE_RERUN", unset = "0")
+if (!force_rerun_text %in% c("0", "1")) {
+  stop("CCLE_FORCE_RERUN must be exactly 0 or 1", call. = FALSE)
+}
+force_rerun <- identical(force_rerun_text, "1")
 
 target <- SETUPS$target[setup_idx]
 tag    <- SETUPS$tag[setup_idx]
@@ -285,6 +315,23 @@ hypothesis <- SETUPS$hypothesis[setup_idx]
 effect_size <- as.numeric(SETUPS$effect_size[setup_idx])
 effect_scale <- SETUPS$effect_scale[setup_idx]
 paired_seed_idx <- as.integer(SETUPS$paired_seed_idx[setup_idx])
+out_file <- ccle_expected_output_path(setup_idx)
+
+if (file.exists(out_file)) {
+  if (force_rerun) {
+    cat("CCLE_FORCE_RERUN=1: replacing existing expected output:\n   ",
+        out_file, "\n", sep = "")
+  } else {
+    stop(
+      "Refusing to overwrite an output that exists at worker start: ",
+      out_file,
+      "\nThe submitter skips strictly validated outputs before dispatch. ",
+      "Review this race or direct invocation before setting ",
+      "CCLE_FORCE_RERUN=1.",
+      call. = FALSE
+    )
+  }
+}
 
 stopifnot(target %in% mut_names)
 cat(sprintf(
@@ -604,18 +651,19 @@ result <- list(
   na_rate        = na_rate
 )
 
-out_file <- file.path(bpath,
-  sprintf(
-    "ccle-typeI-synthY-30targets-matched-v4-results-%s-%s-s10.rds",
-    target,
-    effect_id
-  ))
 tmp_file <- tempfile(
   pattern = paste0(basename(out_file), ".tmp-"),
   tmpdir = dirname(out_file)
 )
 on.exit(unlink(tmp_file), add = TRUE)
 saveRDS(list(result), tmp_file)
+if (file.exists(out_file) && !force_rerun) {
+  stop(
+    "Refusing to overwrite an output that appeared while setup ", setup_idx,
+    " was running: ", out_file,
+    call. = FALSE
+  )
+}
 if (!file.rename(tmp_file, out_file)) {
   stop("Failed to atomically move v4 result into place: ", out_file,
        call. = FALSE)

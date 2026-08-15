@@ -101,13 +101,13 @@ EXPECTED_SETUP_ORDER_V4 <-
   "null_all_targets_then_grid_index_major_representatives"
 EXPECTED_REPRESENTATIVE_TARGETS_V4 <- data.frame(
   representative_order = 1:3,
-  target_idx = c(9L, 15L, 22L),
-  target = c("RIOK3_MUT", "PLK1_MUT", "ATP11A_MUT"),
+  target_idx = c(4L, 15L, 22L),
+  target = c("EIF5A_MUT", "PLK1_MUT", "ATP11A_MUT"),
   sparsity_tag = c("low_sparsity", "medium_sparsity", "high_sparsity"),
   stringsAsFactors = FALSE
 )
 EXPECTED_REPRESENTATIVE_EFFECTS_V4 <- list(
-  RIOK3_MUT = c(0, 1, 2, 3, 4),
+  EIF5A_MUT = c(0, 1, 2, 3, 4),
   PLK1_MUT = c(0, 0.5, 1, 1.5, 2),
   ATP11A_MUT = c(0, 0.5, 1, 1.5, 2)
 )
@@ -1204,7 +1204,7 @@ if (nrow(rej_long) != length(results) * length(method_levels) ||
 # ---------------------------------------------------------------------------
 # 2. Pick 3 null-calibration representatives (one per tercile) at s = 10.
 #    These remain CHIC2, PLK1, and ATP11A; the v4 conditional-effect
-#    diagnostic separately uses RIOK3 as its high-sparsity representative.
+#    diagnostic separately uses EIF5A as its high-sparsity representative.
 # ---------------------------------------------------------------------------
 chosen <- list(
   list(key = "CHIC2_MUT_s10",  tag = "low_sparsity"),
@@ -1680,7 +1680,7 @@ if (identical(input_schema, SCHEMA_V4)) {
         target,
         levels = EXPECTED_REPRESENTATIVE_TARGETS_V4$target,
         labels = c(
-          "RIOK3 (high sparsity)\ngrid: 0, 1, 2, 3, 4",
+          "EIF5A (high sparsity)\ngrid: 0, 1, 2, 3, 4",
           "PLK1 (medium sparsity)\ngrid: 0, 0.5, 1, 1.5, 2",
           "ATP11A (low sparsity)\ngrid: 0, 0.5, 1, 1.5, 2"
         )
@@ -1751,8 +1751,8 @@ if (identical(input_schema, SCHEMA_V4)) {
           "including the paired null at delta = 0."
         ),
         paste(
-          "Curves are not size-adjusted. RIOK3 was selected using an",
-          "independent R = 25 pilot; pilot runs are not pooled."
+          "Curves are not size-adjusted. EIF5A was selected in screening-only",
+          "R = 25 pilot checks with wide Monte Carlo uncertainty; pilot runs are not pooled."
         ),
         sep = "\n"
       )
