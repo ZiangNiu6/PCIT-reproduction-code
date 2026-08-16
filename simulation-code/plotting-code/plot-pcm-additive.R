@@ -674,7 +674,7 @@ make_typeI_panel <- function(setting_value) {
     geom_hline(
       yintercept = alpha,
       linetype = "dashed",
-      colour = "red",
+      colour = "black",
       linewidth = 0.5
     ) +
     geom_text(
@@ -717,7 +717,7 @@ make_rejection_panel <- function(
     geom_hline(
       yintercept = alpha,
       linetype = "dashed",
-      colour = "red",
+      colour = "black",
       linewidth = 0.5
     ) +
     geom_errorbar(

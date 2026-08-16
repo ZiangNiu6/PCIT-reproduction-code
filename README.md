@@ -226,8 +226,9 @@ plotter validates the exact 30 nulls, the three target-specific five-point
 grids, and within-target pairing. It uses only `delta = 0` for the unchanged
 null-calibration figures and writes
 `ccle-alternative-synthY-30targets-rejection.pdf`. That GCM-only diagnostic
-shows separate EIF5A, PLK1, and ATP11A curves on one common absolute effect
-axis from 0 to 4; the panel labels state each target's actual grid. It displays
+shows separate EIF5A, PLK1, and ATP11A curves on target-specific x-axis ranges:
+0 to 4 for EIF5A and 0 to 2 for PLK1 and ATP11A. The panel labels state each
+target's actual grid. It displays
 raw rejection at the nominal `0.05` cutoff over `delta`, including the paired
 null. Because the methods can have different null rejection rates, this is not
 a size-adjusted power curve. V4 also writes two manuscript composites:

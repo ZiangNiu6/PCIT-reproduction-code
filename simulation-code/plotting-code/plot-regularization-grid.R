@@ -95,7 +95,7 @@ figure <- ggplot(
   geom_hline(
     yintercept = 0.05,
     linetype = "dashed",
-    colour = "red",
+    colour = "black",
     linewidth = 0.65
   ) +
   geom_line(linewidth = 0.85, position = position_dodge(width = 0.35)) +

@@ -1155,7 +1155,7 @@ if (nrow(typeI_summary) > 0L) {
       data = nominal_lines,
       aes(yintercept = .data$nominal_alpha),
       inherit.aes = FALSE,
-      linetype = "dashed", colour = "red", linewidth = 0.55
+      linetype = "dashed", colour = "black", linewidth = 0.55
     ) +
     geom_errorbar(
       aes(ymin = .data$mc_lower, ymax = .data$mc_upper),
@@ -1245,7 +1245,7 @@ if (nrow(power_summary) > 0L && any(is.finite(power_summary$estimate))) {
       data = power_nominal_lines,
       aes(yintercept = .data$nominal_alpha),
       inherit.aes = FALSE,
-      linetype = "dashed", colour = "red", linewidth = 0.55
+      linetype = "dashed", colour = "black", linewidth = 0.55
     ) +
     geom_errorbar(
       aes(ymin = .data$mc_lower, ymax = .data$mc_upper),
@@ -1529,7 +1529,7 @@ if (nrow(focused_typeI) > 0L &&
       geom_hline(
         yintercept = focused_alpha,
         linetype = "dashed",
-        colour = "red",
+        colour = "black",
         linewidth = 0.5
       ) +
       geom_text(
@@ -1585,7 +1585,7 @@ if (nrow(focused_typeI) > 0L &&
       geom_hline(
         yintercept = focused_alpha,
         linetype = "dashed",
-        colour = "red",
+        colour = "black",
         linewidth = 0.5
       ) +
       geom_errorbar(

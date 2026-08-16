@@ -155,7 +155,7 @@ p_fdr <- ggplot(fdr_data, aes(x = method, y = value, fill = method)) +
   geom_hline(
     yintercept = HEADLINE_Q,
     linetype = "dashed",
-    colour = "grey40"
+    colour = "black"
   ) +
   geom_errorbar(
     aes(ymin = lower, ymax = upper),

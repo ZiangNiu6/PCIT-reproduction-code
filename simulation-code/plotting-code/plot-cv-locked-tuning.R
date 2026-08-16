@@ -426,7 +426,7 @@ make_regular_bar_plot <- function(learner, cv_rule) {
     geom_hline(
       yintercept = 0.05,
       linetype = "dashed",
-      colour = "red",
+      colour = "black",
       linewidth = 0.6
     ) +
     geom_col(
@@ -554,7 +554,7 @@ make_fixed_path_plot <- function(learner) {
     geom_hline(
       yintercept = 0.05,
       linetype = "dashed",
-      colour = "red",
+      colour = "black",
       linewidth = 0.6
     ) +
     geom_line(linewidth = 0.9) +

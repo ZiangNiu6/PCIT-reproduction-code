@@ -8,8 +8,8 @@
 # artifact when selected through
 # CCLE_RESULTS_SCHEMA=auto|v4|v3|v2 (default: auto, priority v4 > v3 > v2).
 # Unmatched legacy results are never accepted. Existing combined-null and QQ
-# filenames are preserved. V4 additionally writes three representative-target GCM
-# nominal-rejection curves on one absolute effect axis, a two-panel
+# filenames are preserved. V4 additionally writes three representative-target
+# GCM nominal-rejection curves on target-specific effect axes, a two-panel
 # introduction preview, and a three-row main-text composite. Pass --intro-only
 # to regenerate the standalone EIF5A preview and, for v4, its introduction
 # composite; pass --validate-only to validate without writing figures.
@@ -1348,18 +1348,17 @@ if (identical(input_schema, SCHEMA_V4)) {
   ) +
     geom_hline(
       yintercept = EXPECTED_ALPHA,
-      linetype = "dotted",
+      linetype = "dashed",
       colour = "black",
       linewidth = 0.55
     ) +
     geom_line(linewidth = 0.8) +
     geom_point(size = 2.1, stroke = 0.7) +
-    facet_wrap(~ target_label, nrow = 1) +
+    facet_wrap(~ target_label, nrow = 1, scales = "free_x") +
     scale_test_colour(guide = "none") +
     scale_calibration_linetype() +
     scale_x_continuous(
-      limits = c(0, 4),
-      breaks = 0:4,
+      breaks = scales::breaks_pretty(n = 5),
       expand = expansion(mult = c(0.02, 0.02))
     ) +
     scale_y_continuous(
@@ -1368,8 +1367,8 @@ if (identical(input_schema, SCHEMA_V4)) {
       expand = expansion(mult = c(0.01, 0.02))
     ) +
     labs(
-      x = expression("Per-carrier shift " * delta * " (outcome-noise SD)"),
-      y = "Nominal-cutoff rejection rate"
+      x = "Signal strength",
+      y = "Rejection rate"
     ) +
     guides(
       linetype = guide_legend(order = 1),
@@ -1490,7 +1489,7 @@ p_eif5a_null_bar <- ggplot(
   ) +
   geom_hline(
     yintercept = 0.05,
-    linetype = "dotted",
+    linetype = "dashed",
     colour = "black",
     linewidth = 0.55
   ) +
@@ -1571,7 +1570,7 @@ if (identical(input_schema, SCHEMA_V4)) {
   ) +
     geom_hline(
       yintercept = EXPECTED_ALPHA,
-      linetype = "dotted",
+      linetype = "dashed",
       colour = "black",
       linewidth = 0.55
     ) +
@@ -1591,8 +1590,8 @@ if (identical(input_schema, SCHEMA_V4)) {
     ) +
     labs(
       title = "EIF5A conditional-effect response",
-      x = expression("Per-carrier shift " * delta * " (noise SD)"),
-      y = "Nominal-cutoff rejection rate"
+      x = "Signal strength",
+      y = "Rejection rate"
     ) +
     theme_eif5a_intro +
     theme(
@@ -1699,7 +1698,7 @@ n_setups_per_facet <- rej_long |>
 
 ## Pseudo-log y-axis (asinh-style; handles the few asym-GCM rejection rates
 ## that are exactly zero) with breaks at log decades, which are evenly spaced
-## visually. The 0.05 nominal level is flagged by the dotted black line.
+## visually. The 0.05 nominal level is flagged by the dashed black line.
 typeI_y_scale <- scale_y_continuous(
   trans  = scales::pseudo_log_trans(sigma = 0.001, base = 10),
   breaks = c(0.001, 0.01, 0.1, 1),
@@ -1759,7 +1758,7 @@ p_box_c <- ggplot(
   ) +
   geom_jitter(aes(colour = test), width = 0.12, height = 0,
               size = 0.55, alpha = 0.55, show.legend = FALSE) +
-  geom_hline(yintercept = 0.05, linetype = "dotted",
+  geom_hline(yintercept = 0.05, linetype = "dashed",
              colour = "black", linewidth = 0.6) +
   facet_wrap(~ sparsity_tag, nrow = 1) +
   scale_test_fill() +
@@ -1799,7 +1798,7 @@ p_bar_c <- ggplot(
     linewidth = 0.55,
     width = 0.7
   ) +
-  geom_hline(yintercept = 0.05, linetype = "dotted",
+  geom_hline(yintercept = 0.05, linetype = "dashed",
              colour = "black", linewidth = 0.6) +
   facet_wrap(~ setup, nrow = 1) +
   scale_test_fill() +
@@ -1922,7 +1921,7 @@ if (identical(input_schema, SCHEMA_V4)) {
       title = "CCLE paired conditional-effect experiment",
       subtitle = paste(
         "s = 10; one target per sparsity group;",
-        "common absolute effect axis; nominal cutoff = 0.05"
+        "target-specific effect axes; nominal cutoff = 0.05"
       ),
       caption = paste(
         paste(
