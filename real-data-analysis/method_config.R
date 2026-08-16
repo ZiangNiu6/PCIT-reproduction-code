@@ -22,10 +22,10 @@ PERTURB_RESAMPLING_METHODS <- PERTURB_METHOD_LEVELS[-1L]
 PERTURB_METHOD_DISPLAY <- c(
   "parametric_score" = "Parametric score",
   "information_studentized_permutation" =
-    "Information-studentized permutation",
+    "Barry et al.",
   "studentized_permutation" = "Empirical-studentized permutation",
-  "hgf_signflip_mc" = "HGF sign flip (MC)",
-  "standardized_signflip" = "Standardized sign flip"
+  "hgf_signflip_mc" = "Hemerik et al.",
+  "standardized_signflip" = "De Santis et al."
 )
 
 PERTURB_METHOD_COLORS <- c(

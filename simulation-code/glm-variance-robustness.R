@@ -574,7 +574,7 @@ summarize_pvalues <- function(replicate_results, alpha) {
   method_labels <- c(
     "Poisson normal cutoff",
     "Unstudentized permutation",
-    "Information-studentized permutation",
+    "Barry et al.",
     "Empirical-studentized permutation"
   )
   pvalue_columns <- paste0("p_", method_keys)
@@ -740,7 +740,7 @@ make_figure <- function(replicate_results, summary, config, output_directory) {
   all_method_labels <- c(
     "Poisson normal cutoff",
     "Unstudentized permutation",
-    "Information-studentized permutation",
+    "Barry et al.",
     "Empirical-studentized permutation"
   )
   method_colors <- c(

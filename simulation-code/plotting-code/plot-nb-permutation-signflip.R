@@ -128,19 +128,19 @@ method_levels <- c(
 method_labels <- c(
   "parametric_score" = "Parametric score",
   "information_studentized_permutation" =
-    "Information-studentized permutation",
+    "Barry et al.",
   "studentized_permutation" = "Empirical-studentized permutation",
-  "hgf_signflip_mc" = "HGF sign flip (MC)",
-  "standardized_signflip" = "Standardized sign flip"
+  "hgf_signflip_mc" = "Hemerik et al.",
+  "standardized_signflip" = "De Santis et al."
 )
 # Preserve the colours of the three shared methods in combine.pdf. The two
 # sign-flip procedures use the remaining green/cyan manuscript colours.
 method_colors <- c(
   "Parametric score" = "#F8766D",
-  "Information-studentized permutation" = "#C77CFF",
+  "Barry et al." = "#C77CFF",
   "Empirical-studentized permutation" = "#619CFF",
-  "HGF sign flip (MC)" = "#00BA38",
-  "Standardized sign flip" = "#00BFC4"
+  "Hemerik et al." = "#00BA38",
+  "De Santis et al." = "#00BFC4"
 )
 
 scenario_levels <- c(
