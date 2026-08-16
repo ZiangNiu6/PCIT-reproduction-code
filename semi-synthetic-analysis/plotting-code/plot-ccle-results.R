@@ -7,11 +7,12 @@
 # The plotter can also validate and use a transitional matched-v3 or matched-v2
 # artifact when selected through
 # CCLE_RESULTS_SCHEMA=auto|v4|v3|v2 (default: auto, priority v4 > v3 > v2).
-# Unmatched legacy results are never accepted. Existing null-figure filenames
-# are preserved. V4 additionally writes three representative-target GCM
-# nominal-rejection curves on one absolute effect axis. Pass --intro-only to
-# regenerate only the standalone CHIC2 preview or --validate-only to validate
-# without writing figures.
+# Unmatched legacy results are never accepted. Existing combined-null and QQ
+# filenames are preserved. V4 additionally writes three representative-target GCM
+# nominal-rejection curves on one absolute effect axis, a two-panel
+# introduction preview, and a three-row main-text composite. Pass --intro-only
+# to regenerate the standalone EIF5A preview and, for v4, its introduction
+# composite; pass --validate-only to validate without writing figures.
 ###############################################################################
 
 script_args <- commandArgs(trailingOnly = TRUE)
@@ -177,6 +178,23 @@ if (is.na(selected_schema) || !file.exists(schema_paths[[selected_schema]])) {
 }
 results_path <- unname(schema_paths[[selected_schema]])
 input_schema <- unname(schema_versions[[selected_schema]])
+v4_manuscript_composites <- file.path(
+  output_dir,
+  c(
+    "ccle-typeI-synthY-intro-calibration-power.pdf",
+    "ccle-typeI-synthY-30targets-typeI-power-combined.pdf"
+  )
+)
+if (!identical(selected_schema, "v4") &&
+    any(file.exists(v4_manuscript_composites))) {
+  stop(
+    "Matched-v4 manuscript composite(s) already exist, but schema ",
+    selected_schema, " was selected. Refusing to mix stale power panels with ",
+    "legacy null-only results. Move the v4 composites out of the figure ",
+    "directory or plot the matching v4 artifact.",
+    call. = FALSE
+  )
+}
 if (!identical(selected_schema, "v4")) {
   warning(
     "Using explicitly validated transitional matched-", selected_schema,
@@ -1127,7 +1145,7 @@ if (length(results) != 30L ||
     any(table(vapply(
       results, function(x) as.character(x$sparsity_tag), character(1L)
     )) != 10L) ||
-    !all(c("CHIC2_MUT_s10", "PLK1_MUT_s10", "ATP11A_MUT_s10") %in%
+    !all(c("EIF5A_MUT_s10", "PLK1_MUT_s10", "ATP11A_MUT_s10") %in%
          names(results))) {
   stop("The canonical 30 s=10 null records or representative targets are missing.",
        call. = FALSE)
@@ -1203,11 +1221,11 @@ if (nrow(rej_long) != length(results) * length(method_levels) ||
 
 # ---------------------------------------------------------------------------
 # 2. Pick 3 null-calibration representatives (one per tercile) at s = 10.
-#    These remain CHIC2, PLK1, and ATP11A; the v4 conditional-effect
-#    diagnostic separately uses EIF5A as its high-sparsity representative.
+#    EIF5A is also the v4 high-sparsity conditional-effect representative, so
+#    the null and effect panels use the same target in that sparsity group.
 # ---------------------------------------------------------------------------
 chosen <- list(
-  list(key = "CHIC2_MUT_s10",  tag = "low_sparsity"),
+  list(key = "EIF5A_MUT_s10",  tag = "low_sparsity"),
   list(key = "PLK1_MUT_s10",   tag = "medium_sparsity"),
   list(key = "ATP11A_MUT_s10", tag = "high_sparsity")
 )
@@ -1259,8 +1277,115 @@ if (nrow(pv_qq) != length(chosen_keys) * EXPECTED_R * length(method_levels) ||
 }
 
 # ---------------------------------------------------------------------------
-# 3a. Standalone CHIC2 calibration preview for the introduction. This uses
-#     test colour and calibration border type without repeating CHIC2 metadata
+# 3a. V4 representative conditional-effect curves.  Build this once so the
+#     same validated target-level rates feed the introduction preview, the
+#     standalone diagnostic, and row (c) of the main-text composite.
+# ---------------------------------------------------------------------------
+effect_grid_summary <- NULL
+p_power_core <- NULL
+if (identical(input_schema, SCHEMA_V4)) {
+  alternative_method_levels <- c("perm_gcm", "asym_gcm")
+  effect_grid_long <- bind_rows(lapply(effect_grid_results, function(record) {
+    data.frame(
+      target = record$target,
+      sparsity_tag = record$sparsity_tag,
+      freq = record$freq,
+      s = record$s,
+      grid_idx = record$grid_idx,
+      effect_id = record$effect_id,
+      effect_size = record$effect_size,
+      method = names(record$rejection_rate),
+      rejection_rate = unname(record$rejection_rate),
+      stringsAsFactors = FALSE
+    )
+  })) |>
+    filter(method %in% alternative_method_levels) |>
+    mutate(
+      method = factor(method, levels = alternative_method_levels),
+      method_label = factor(
+        unname(method_labels[as.character(method)]),
+        levels = unname(method_labels[alternative_method_levels])
+      ),
+      target_label = factor(
+        target,
+        levels = EXPECTED_REPRESENTATIVE_TARGETS_V4$target,
+        labels = c(
+          "EIF5A (high sparsity)\ngrid: 0, 1, 2, 3, 4",
+          "PLK1 (medium sparsity)\ngrid: 0, 0.5, 1, 1.5, 2",
+          "ATP11A (low sparsity)\ngrid: 0, 0.5, 1, 1.5, 2"
+        )
+      )
+    ) |>
+    add_calibration_test_aesthetics()
+
+  if (nrow(effect_grid_long) !=
+        3L * 5L * length(alternative_method_levels) ||
+      anyNA(effect_grid_long$method) ||
+      anyNA(effect_grid_long$method_label) ||
+      anyNA(effect_grid_long$target_label) ||
+      any(table(
+        effect_grid_long$target,
+        effect_grid_long$grid_idx,
+        effect_grid_long$method
+      ) != 1L)) {
+    stop("The paired v4 representative GCM diagnostic is incomplete.",
+         call. = FALSE)
+  }
+
+  effect_grid_summary <- effect_grid_long |>
+    arrange(target_label, method, grid_idx)
+
+  p_power_core <- ggplot(
+    effect_grid_summary,
+    aes(
+      x = effect_size,
+      y = rejection_rate,
+      colour = test,
+      linetype = calibration,
+      shape = calibration,
+      group = method_label
+    )
+  ) +
+    geom_hline(
+      yintercept = EXPECTED_ALPHA,
+      linetype = "dotted",
+      colour = "black",
+      linewidth = 0.55
+    ) +
+    geom_line(linewidth = 0.8) +
+    geom_point(size = 2.1, stroke = 0.7) +
+    facet_wrap(~ target_label, nrow = 1) +
+    scale_test_colour(guide = "none") +
+    scale_calibration_linetype() +
+    scale_x_continuous(
+      limits = c(0, 4),
+      breaks = 0:4,
+      expand = expansion(mult = c(0.02, 0.02))
+    ) +
+    scale_y_continuous(
+      limits = c(0, 1),
+      breaks = seq(0, 1, by = 0.2),
+      expand = expansion(mult = c(0.01, 0.02))
+    ) +
+    labs(
+      x = expression("Per-carrier shift " * delta * " (outcome-noise SD)"),
+      y = "Nominal-cutoff rejection rate"
+    ) +
+    guides(
+      linetype = guide_legend(order = 1),
+      shape = "none"
+    ) +
+    theme_figure3(base_size = 13) +
+    theme(
+      strip.text = element_text(face = "bold", size = 11),
+      legend.position = "bottom",
+      legend.box = "horizontal"
+    )
+}
+
+# ---------------------------------------------------------------------------
+# 3b. Standalone EIF5A calibration preview for the introduction. This uses
+#     test colour and calibration border type without repeating EIF5A metadata
 #     in a facet strip.
 # ---------------------------------------------------------------------------
 wilson_interval <- function(successes, repetitions, confidence = 0.95) {
@@ -1277,33 +1402,37 @@ wilson_interval <- function(successes, repetitions, confidence = 0.95) {
   )
 }
 
-chic2_record <- results[["CHIC2_MUT_s10"]]
-if (!is.list(chic2_record) ||
+eif5a_null_record <- results[["EIF5A_MUT_s10"]]
+if (!is.list(eif5a_null_record) ||
     !all(c("target", "s", "R", "pvals", "rejection_rate") %in%
-         names(chic2_record))) {
-  stop("Malformed CHIC2 Figure 1 result", call. = FALSE)
+         names(eif5a_null_record))) {
+  stop("Malformed EIF5A Figure 1 result", call. = FALSE)
 }
-if (!identical(chic2_record$target, "CHIC2_MUT") ||
-    !identical(as.integer(chic2_record$s), 10L) ||
-    !identical(as.integer(chic2_record$R), 500L)) {
-  stop("The Figure 1 result must be CHIC2_MUT, s=10, R=500", call. = FALSE)
+if (!identical(eif5a_null_record$target, "EIF5A_MUT") ||
+    !identical(as.integer(eif5a_null_record$s), 10L) ||
+    !identical(as.integer(eif5a_null_record$R), 500L)) {
+  stop("The Figure 1 result must be EIF5A_MUT, s=10, R=500", call. = FALSE)
 }
-chic2_pvals <- as.data.frame(chic2_record$pvals)[method_levels]
-if (nrow(chic2_pvals) != chic2_record$R ||
-    any(!is.finite(as.matrix(chic2_pvals))) ||
-    any(as.matrix(chic2_pvals) < 0 | as.matrix(chic2_pvals) > 1)) {
+eif5a_null_pvals <- as.data.frame(eif5a_null_record$pvals)[method_levels]
+if (nrow(eif5a_null_pvals) != eif5a_null_record$R ||
+    any(!is.finite(as.matrix(eif5a_null_pvals))) ||
+    any(as.matrix(eif5a_null_pvals) < 0 |
+        as.matrix(eif5a_null_pvals) > 1)) {
   stop("Figure 1 contains missing or invalid p-values", call. = FALSE)
 }
-chic2_repetitions <- colSums(!is.na(chic2_pvals))
-chic2_rejections <- colSums(chic2_pvals <= 0.05, na.rm = TRUE)
-chic2_summary <- data.frame(
+eif5a_null_repetitions <- colSums(!is.na(eif5a_null_pvals))
+eif5a_null_rejections <- colSums(eif5a_null_pvals <= 0.05, na.rm = TRUE)
+eif5a_null_summary <- data.frame(
   method = method_levels,
-  repetitions = unname(chic2_repetitions),
-  rejections = unname(chic2_rejections),
-  rejection_rate = unname(chic2_rejections / chic2_repetitions),
+  repetitions = unname(eif5a_null_repetitions),
+  rejections = unname(eif5a_null_rejections),
+  rejection_rate = unname(eif5a_null_rejections / eif5a_null_repetitions),
   stringsAsFactors = FALSE
 ) |>
-  bind_cols(wilson_interval(chic2_rejections, chic2_repetitions)) |>
+  bind_cols(wilson_interval(
+    eif5a_null_rejections,
+    eif5a_null_repetitions
+  )) |>
   mutate(
     method = factor(method, levels = method_levels),
     method_label = factor(
@@ -1314,11 +1443,11 @@ chic2_summary <- data.frame(
   add_calibration_test_aesthetics()
 
 stopifnot(isTRUE(all.equal(
-  unname(chic2_summary$rejection_rate),
-  unname(chic2_record$rejection_rate[method_levels])
+  unname(eif5a_null_summary$rejection_rate),
+  unname(eif5a_null_record$rejection_rate[method_levels])
 )))
 
-theme_chic2_intro <- theme_bw(base_size = 9) +
+theme_eif5a_intro <- theme_bw(base_size = 9) +
   theme(
     axis.line = element_line(colour = "black", linewidth = 0.4),
     panel.grid.major = element_blank(),
@@ -1340,12 +1469,12 @@ theme_chic2_intro <- theme_bw(base_size = 9) +
     plot.margin = margin(3, 2, 8, 2)
   )
 
-chic2_bar_upper <- min(
+eif5a_null_bar_upper <- min(
   1,
-  1.20 * max(chic2_summary$ci_upper, 0.05)
+  1.20 * max(eif5a_null_summary$ci_upper, 0.05)
 )
-p_chic2_bar <- ggplot(
-  chic2_summary,
+p_eif5a_null_bar <- ggplot(
+  eif5a_null_summary,
   aes(x = method_label, y = rejection_rate)
 ) +
   geom_col(
@@ -1373,7 +1502,7 @@ p_chic2_bar <- ggplot(
   scale_test_fill() +
   scale_calibration_linetype() +
   scale_y_continuous(
-    limits = c(0, chic2_bar_upper),
+    limits = c(0, eif5a_null_bar_upper),
     expand = expansion(mult = c(0, 0.02))
   ) +
   labs(x = NULL, y = "Rejection rate") +
@@ -1399,22 +1528,117 @@ p_chic2_bar <- ggplot(
       )
     )
   ) +
-  theme_chic2_intro +
+  theme_eif5a_intro +
   theme(
     axis.text.x = element_blank(),
     axis.ticks.x = element_blank()
   )
-chic2_calibration_path <- file.path(
+eif5a_calibration_path <- file.path(
   output_dir,
-  "ccle-typeI-synthY-CHIC2-calibration.pdf"
+  "ccle-typeI-synthY-EIF5A-calibration.pdf"
 )
 ggsave(
-  chic2_calibration_path,
-  p_chic2_bar,
+  eif5a_calibration_path,
+  p_eif5a_null_bar,
   width = 5.5,
   height = 3.4
 )
-cat("Saved: ", chic2_calibration_path, "\n", sep = "")
+cat("Saved: ", eif5a_calibration_path, "\n", sep = "")
+
+if (identical(input_schema, SCHEMA_V4)) {
+  eif5a_effect_summary <- effect_grid_summary |>
+    filter(target == "EIF5A_MUT") |>
+    arrange(method, grid_idx)
+  if (nrow(eif5a_effect_summary) !=
+        5L * length(alternative_method_levels) ||
+      any(table(
+        eif5a_effect_summary$grid_idx,
+        eif5a_effect_summary$method
+      ) != 1L)) {
+    stop("The EIF5A introduction power panel is incomplete.", call. = FALSE)
+  }
+
+  p_eif5a_intro <- ggplot(
+    eif5a_effect_summary,
+    aes(
+      x = effect_size,
+      y = rejection_rate,
+      colour = test,
+      linetype = calibration,
+      shape = calibration,
+      group = method_label
+    )
+  ) +
+    geom_hline(
+      yintercept = EXPECTED_ALPHA,
+      linetype = "dotted",
+      colour = "black",
+      linewidth = 0.55
+    ) +
+    geom_line(linewidth = 0.75) +
+    geom_point(size = 1.9, stroke = 0.65) +
+    scale_test_colour(guide = "none") +
+    scale_calibration_linetype(guide = "none") +
+    scale_x_continuous(
+      limits = c(0, 4),
+      breaks = 0:4,
+      expand = expansion(mult = c(0.02, 0.02))
+    ) +
+    scale_y_continuous(
+      limits = c(0, 1),
+      breaks = seq(0, 1, by = 0.2),
+      expand = expansion(mult = c(0.01, 0.02))
+    ) +
+    labs(
+      title = "EIF5A conditional-effect response",
+      x = expression("Per-carrier shift " * delta * " (noise SD)"),
+      y = "Nominal-cutoff rejection rate"
+    ) +
+    theme_eif5a_intro +
+    theme(
+      legend.position = "none",
+      plot.title = element_text(face = "bold", size = 9.5, hjust = 0.5),
+      plot.margin = margin(3, 4, 8, 2)
+    )
+
+  intro_legend <- cowplot::get_plot_component(
+    p_eif5a_null_bar + theme(legend.position = "bottom"),
+    "guide-box-bottom"
+  )
+  p_intro_panels <- cowplot::plot_grid(
+    p_eif5a_null_bar +
+      labs(title = "EIF5A null calibration") +
+      theme(
+        legend.position = "none",
+        plot.title = element_text(face = "bold", size = 9.5, hjust = 0.5)
+      ),
+    p_eif5a_intro,
+    ncol = 2,
+    align = "hv",
+    axis = "tb",
+    labels = c("(a)", "(b)"),
+    label_size = 10,
+    label_fontface = "bold",
+    rel_widths = c(0.46, 0.54)
+  )
+  p_intro_combined <- cowplot::plot_grid(
+    p_intro_panels,
+    intro_legend,
+    ncol = 1,
+    rel_heights = c(1, 0.14)
+  )
+  intro_combined_path <- file.path(
+    output_dir,
+    "ccle-typeI-synthY-intro-calibration-power.pdf"
+  )
+  ggsave(
+    intro_combined_path,
+    p_intro_combined,
+    width = 8.4,
+    height = 3.6
+  )
+  cat("Saved: ", intro_combined_path, "\n", sep = "")
+}
 
 if (intro_only) {
   quit(save = "no", status = 0L)
@@ -1650,101 +1874,56 @@ combined_path <- file.path(
 ggsave(combined_path, p_combined, width = 12, height = 7.8)
 cat("Saved: ", combined_path, "\n", sep = "")
 
+if (identical(input_schema, SCHEMA_V4)) {
+  p_power_row <- p_power_core +
+    theme(
+      legend.position = "none",
+      plot.title = element_blank(),
+      plot.subtitle = element_blank(),
+      plot.caption = element_blank()
+    )
+  p_three_row_panels <- cowplot::plot_grid(
+    p_box_nl,
+    p_bar_nl,
+    p_power_row,
+    ncol = 1,
+    align = "v",
+    axis = "lr",
+    labels = c("(a)", "(b)", "(c)"),
+    label_size = 12,
+    label_fontface = "bold",
+    rel_heights = c(1, 1, 1.18)
+  )
+  p_three_row_combined <- cowplot::plot_grid(
+    p_three_row_panels,
+    shared_legend,
+    ncol = 1,
+    rel_heights = c(1, 0.07)
+  )
+  combined_power_path <- file.path(
+    output_dir,
+    "ccle-typeI-synthY-30targets-typeI-power-combined.pdf"
+  )
+  ggsave(
+    combined_power_path,
+    p_three_row_combined,
+    width = 12,
+    height = 11.0
+  )
+  cat("Saved: ", combined_power_path, "\n", sep = "")
+}
+
 # ---------------------------------------------------------------------------
 # 7. Paired effect diagnostic (v4 representative grids; v3 transitional arm).
 # ---------------------------------------------------------------------------
 if (identical(input_schema, SCHEMA_V4)) {
-  alternative_method_levels <- c("perm_gcm", "asym_gcm")
-  effect_grid_long <- bind_rows(lapply(effect_grid_results, function(record) {
-    data.frame(
-      target = record$target,
-      sparsity_tag = record$sparsity_tag,
-      freq = record$freq,
-      s = record$s,
-      grid_idx = record$grid_idx,
-      effect_id = record$effect_id,
-      effect_size = record$effect_size,
-      method = names(record$rejection_rate),
-      rejection_rate = unname(record$rejection_rate),
-      stringsAsFactors = FALSE
-    )
-  })) |>
-    filter(method %in% alternative_method_levels) |>
-    mutate(
-      method = factor(method, levels = alternative_method_levels),
-      method_label = factor(
-        unname(method_labels[as.character(method)]),
-        levels = unname(method_labels[alternative_method_levels])
-      ),
-      target_label = factor(
-        target,
-        levels = EXPECTED_REPRESENTATIVE_TARGETS_V4$target,
-        labels = c(
-          "EIF5A (high sparsity)\ngrid: 0, 1, 2, 3, 4",
-          "PLK1 (medium sparsity)\ngrid: 0, 0.5, 1, 1.5, 2",
-          "ATP11A (low sparsity)\ngrid: 0, 0.5, 1, 1.5, 2"
-        )
-      )
-    ) |>
-    add_calibration_test_aesthetics()
-
-  if (nrow(effect_grid_long) !=
-        3L * 5L * length(alternative_method_levels) ||
-      anyNA(effect_grid_long$method) ||
-      anyNA(effect_grid_long$method_label) ||
-      anyNA(effect_grid_long$target_label) ||
-      any(table(
-        effect_grid_long$target,
-        effect_grid_long$grid_idx,
-        effect_grid_long$method
-      ) != 1L)) {
-    stop("The paired v4 representative GCM diagnostic is incomplete.",
-         call. = FALSE)
-  }
-
-  effect_grid_summary <- effect_grid_long |>
-    arrange(target_label, method, grid_idx)
-
-  p_alternative <- ggplot(
-    effect_grid_summary,
-    aes(
-      x = effect_size,
-      y = rejection_rate,
-      colour = test,
-      linetype = calibration,
-      shape = calibration,
-      group = method_label
-    )
-  ) +
-    geom_hline(
-      yintercept = EXPECTED_ALPHA,
-      linetype = "dotted",
-      colour = "black",
-      linewidth = 0.55
-    ) +
-    geom_line(linewidth = 0.8) +
-    geom_point(size = 2.1, stroke = 0.7) +
-    facet_wrap(~ target_label, nrow = 1) +
-    scale_test_colour(guide = "none") +
-    scale_calibration_linetype() +
-    scale_x_continuous(
-      limits = c(0, 4),
-      breaks = 0:4,
-      expand = expansion(mult = c(0.02, 0.02))
-    ) +
-    scale_y_continuous(
-      limits = c(0, 1),
-      breaks = seq(0, 1, by = 0.2),
-      expand = expansion(mult = c(0.01, 0.02))
-    ) +
+  p_alternative <- p_power_core +
     labs(
       title = "CCLE paired conditional-effect experiment",
       subtitle = paste(
         "s = 10; one target per sparsity group;",
         "common absolute effect axis; nominal cutoff = 0.05"
       ),
-      x = expression("Per-carrier shift " * delta * " (outcome-noise SD)"),
-      y = "Nominal-cutoff rejection rate",
       caption = paste(
         paste(
           "GCM only. Points are target-level raw nominal-cutoff rejection,",
@@ -1757,15 +1936,7 @@ if (identical(input_schema, SCHEMA_V4)) {
         sep = "\n"
       )
     ) +
-    guides(
-      linetype = guide_legend(order = 1),
-      shape = "none"
-    ) +
-    theme_figure3(base_size = 13) +
     theme(
-      strip.text = element_text(face = "bold", size = 11),
-      legend.position = "bottom",
-      legend.box = "horizontal",
       plot.title = element_text(face = "bold")
     )
 

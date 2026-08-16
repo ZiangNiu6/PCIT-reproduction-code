@@ -9,7 +9,7 @@ figure_dir <- file.path(
 )
 
 expected_figures <- c(
-  "ccle-typeI-synthY-CHIC2-calibration.pdf",
+  "ccle-typeI-synthY-EIF5A-calibration.pdf",
   "illustrative-example-ci-misspecified.pdf",
   "nb-permutation-signflip-ci-focused-3x3.pdf",
   "pcm_additive.pdf",
@@ -21,6 +21,27 @@ expected_figures <- c(
   "frangieh-score5-pvalue-histograms.pdf",
   "regularization-robustness-grid.pdf"
 )
+
+v4_composites <- c(
+  "ccle-typeI-synthY-intro-calibration-power.pdf",
+  "ccle-typeI-synthY-30targets-typeI-power-combined.pdf"
+)
+v4_composite_paths <- file.path(figure_dir, v4_composites)
+if (any(file.exists(v4_composite_paths))) {
+  missing_v4 <- v4_composites[!file.exists(v4_composite_paths)]
+  if (length(missing_v4) > 0L) {
+    stop(
+      "Incomplete matched-v4 manuscript composite set:\n  ",
+      paste(missing_v4, collapse = "\n  "),
+      call. = FALSE
+    )
+  }
+  expected_figures <- c(
+    expected_figures,
+    v4_composites,
+    "ccle-alternative-synthY-30targets-rejection.pdf"
+  )
+}
 
 paths <- file.path(figure_dir, expected_figures)
 missing <- expected_figures[!file.exists(paths)]

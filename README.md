@@ -42,8 +42,9 @@ documented local fallback), while final PDFs are written to
 - `real-data-analysis/`: the Frangieh Perturb-seq FDR and power analysis.
 - `plotting-style.R`: the shared visual encoding used by the GCM/PCM and CCLE
   figures.
-- `check_outputs.R`: verifies that all 11 active manuscript PDFs exist and are
-  nonempty.
+- `check_outputs.R`: verifies the 11 baseline manuscript PDFs and, when v4
+  CCLE composites are present, requires the complete three-file v4 figure set;
+  every checked PDF must exist and be nonempty.
 
 Exploratory analyses not used by the active manuscript are intentionally
 excluded.
@@ -138,9 +139,9 @@ PLK1_MUT:   delta in {0, 0.5, 1, 1.5, 2}
 ATP11A_MUT: delta in {0, 0.5, 1, 1.5, 2}
 ```
 
-`CHIC2_MUT` remains the high-sparsity representative in the paper's null
-calibration and p-value-quantile figures. Only the v4 conditional-effect
-diagnostic replaces it with the four-carrier target `EIF5A_MUT`.
+The four-carrier target `EIF5A_MUT` is the high-sparsity representative in
+both the paper's null-calibration and p-value-quantile figures and the v4
+conditional-effect diagnostic.
 
 Thus each nonzero effect is a `delta`-noise-SD per-carrier shift and differs
 from that target's paired null only through the added target effect: the active
@@ -229,7 +230,16 @@ shows separate EIF5A, PLK1, and ATP11A curves on one common absolute effect
 axis from 0 to 4; the panel labels state each target's actual grid. It displays
 raw rejection at the nominal `0.05` cutoff over `delta`, including the paired
 null. Because the methods can have different null rejection rates, this is not
-a size-adjusted power curve. Unmatched legacy combined results are ignored.
+a size-adjusted power curve. V4 also writes two manuscript composites:
+`ccle-typeI-synthY-intro-calibration-power.pdf` places the EIF5A null bar plot
+beside its conditional-effect curve, and
+`ccle-typeI-synthY-30targets-typeI-power-combined.pdf` adds the full
+three-target conditional-effect plot as row (c) beneath the two null rows.
+The manuscript automatically uses these composites when they exist and keeps
+the null-only legacy figures as a transition fallback. To prevent stale panels,
+the plotter fails closed if a v2/v3 result is selected while either v4
+manuscript composite remains in the figure directory. Unmatched legacy
+combined results are ignored.
 
 ## CCLE asymptotic-GCM effect-grid pilot
 
