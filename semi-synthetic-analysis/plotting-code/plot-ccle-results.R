@@ -1310,9 +1310,9 @@ if (identical(input_schema, SCHEMA_V4)) {
         target,
         levels = EXPECTED_REPRESENTATIVE_TARGETS_V4$target,
         labels = c(
-          "EIF5A (high sparsity)\ngrid: 0, 1, 2, 3, 4",
-          "PLK1 (medium sparsity)\ngrid: 0, 0.5, 1, 1.5, 2",
-          "ATP11A (low sparsity)\ngrid: 0, 0.5, 1, 1.5, 2"
+          "EIF5A (high sparsity)",
+          "PLK1 (medium sparsity)",
+          "ATP11A (low sparsity)"
         )
       )
     ) |>
@@ -1873,6 +1873,12 @@ combined_path <- file.path(
 ggsave(combined_path, p_combined, width = 12, height = 7.8)
 cat("Saved: ", combined_path, "\n", sep = "")
 
+# ---------------------------------------------------------------------------
+# 6b. Main-text composite (v4): a 2 x 3 grid whose ROWS are the two extreme
+#     mutation-sparsity groups and whose COLUMNS are the three panel types.
+#     The medium-sparsity group is deliberately omitted here; it remains in the
+#     standalone diagnostics and in the appendix figures.
+# ---------------------------------------------------------------------------
 if (identical(input_schema, SCHEMA_V4)) {
   p_power_row <- p_power_core +
     theme(
@@ -1881,23 +1887,83 @@ if (identical(input_schema, SCHEMA_V4)) {
       plot.subtitle = element_blank(),
       plot.caption = element_blank()
     )
-  p_three_row_panels <- cowplot::plot_grid(
-    p_box_nl,
-    p_bar_nl,
-    p_power_row,
-    ncol = 1,
-    align = "v",
-    axis = "lr",
-    labels = c("(a)", "(b)", "(c)"),
-    label_size = 12,
-    label_fontface = "bold",
-    rel_heights = c(1, 1, 1.18)
+
+  ## Row keys: display sparsity label, its representative target, and the
+  ## representative's setup label used by the null-calibration bar panel.
+  composite_rows <- list(
+    list(
+      sparsity = sparsity_labels[["low_sparsity"]],
+      target   = "EIF5A_MUT",
+      setup    = setup_label(results[["EIF5A_MUT_s10"]])
+    ),
+    list(
+      sparsity = sparsity_labels[["high_sparsity"]],
+      target   = "ATP11A_MUT",
+      setup    = setup_label(results[["ATP11A_MUT_s10"]])
+    )
   )
-  p_three_row_combined <- cowplot::plot_grid(
-    p_three_row_panels,
+
+  ## The sparsity group names each row from the left margin, so the group is
+  ## stated once per row instead of on the column-(a) facet strip.
+  row_side_label <- function(label) {
+    cowplot::ggdraw() +
+      cowplot::draw_label(
+        label,
+        angle = 90,
+        fontface = "bold",
+        size = 13
+      )
+  }
+
+  composite_row_grid <- function(row, labels) {
+    box_data <- rej_long[
+      as.character(rej_long$sparsity_tag) == row$sparsity, , drop = FALSE
+    ]
+    bar_data <- rej_chosen[
+      as.character(rej_chosen$setup) == row$setup, , drop = FALSE
+    ]
+    power_data <- effect_grid_summary[
+      effect_grid_summary$target == row$target, , drop = FALSE
+    ]
+    if (!nrow(box_data) || !nrow(bar_data) || !nrow(power_data)) {
+      stop("Empty composite row for sparsity group: ", row$sparsity,
+           call. = FALSE)
+    }
+    ## The row label already names the sparsity group, so column (a) restates
+    ## its own content instead.  Keeping a strip here also keeps the three
+    ## panel heights identical within the row.
+    box_data$panel_label <- "All 10 null targets"
+    panels <- cowplot::plot_grid(
+      p_box_nl + box_data + facet_wrap(~ panel_label, nrow = 1),
+      p_bar_nl + bar_data,
+      p_power_row + power_data,
+      nrow = 1,
+      align = "h",
+      axis = "tb",
+      labels = labels,
+      label_size = 12,
+      label_fontface = "bold",
+      rel_widths = c(1, 1, 1.15)
+    )
+    cowplot::plot_grid(
+      row_side_label(row$sparsity),
+      panels,
+      nrow = 1,
+      rel_widths = c(0.045, 1)
+    )
+  }
+
+  p_two_row_panels <- cowplot::plot_grid(
+    composite_row_grid(composite_rows[[1L]], c("(a)", "(b)", "(c)")),
+    composite_row_grid(composite_rows[[2L]], NULL),
+    ncol = 1,
+    rel_heights = c(1, 1)
+  )
+  p_two_row_combined <- cowplot::plot_grid(
+    p_two_row_panels,
     shared_legend,
     ncol = 1,
-    rel_heights = c(1, 0.07)
+    rel_heights = c(1, 0.09)
   )
   combined_power_path <- file.path(
     output_dir,
@@ -1905,9 +1971,9 @@ if (identical(input_schema, SCHEMA_V4)) {
   )
   ggsave(
     combined_power_path,
-    p_three_row_combined,
-    width = 12,
-    height = 11.0
+    p_two_row_combined,
+    width = 13.5,
+    height = 7.6
   )
   cat("Saved: ", combined_power_path, "\n", sep = "")
 }
