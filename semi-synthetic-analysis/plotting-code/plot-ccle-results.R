@@ -1929,14 +1929,17 @@ if (identical(input_schema, SCHEMA_V4)) {
       stop("Empty composite row for sparsity group: ", row$sparsity,
            call. = FALSE)
     }
-    ## The row label already names the sparsity group, so column (a) restates
-    ## its own content instead.  Keeping a strip here also keeps the three
-    ## panel heights identical within the row.
+    ## The row label already names the sparsity group and its representative,
+    ## so each strip states what its own column measures.  Keeping a strip on
+    ## every column also keeps the three panel heights identical within a row.
+    target_short <- sub("_MUT$", "", row$target)
     box_data$panel_label <- "All 10 null targets"
+    bar_data$panel_label <- paste0(target_short, ": Type-I error")
+    power_data$panel_label <- paste0(target_short, ": Power")
     panels <- cowplot::plot_grid(
       p_box_nl + box_data + facet_wrap(~ panel_label, nrow = 1),
-      p_bar_nl + bar_data,
-      p_power_row + power_data,
+      p_bar_nl + bar_data + facet_wrap(~ panel_label, nrow = 1),
+      p_power_row + power_data + facet_wrap(~ panel_label, nrow = 1),
       nrow = 1,
       align = "h",
       axis = "tb",
