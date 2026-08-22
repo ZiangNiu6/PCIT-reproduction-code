@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
 # Submit one SGE array task per eligible Frangieh perturbation target.
 #
-# Required:
-#   FRANGIEH_RAW_H5AD=/absolute/path/frangieh_2021_raw.h5ad
+# Counts are read from the ondisc ODM in the intermediate directory by
+# default.  Set FRANGIEH_RAW_H5AD only to run the scPerturb H5AD backend,
+# which reconstructs integer counts from log1p(CPM).
 #
 # Optional:
+#   FRANGIEH_RAW_H5AD=/absolute/path/frangieh_2021_raw.h5ad
 #   FRANGIEH_INTERMEDIATE_DIR=/absolute/path/intermediate-data
 #   FRANGIEH_EXPLORATORY_RESULTS_DIR=/absolute/path/output
 #   LOCAL_PDRT_DATA_DIR=/absolute/path/results-root
@@ -20,16 +22,26 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
-if [[ -z "${FRANGIEH_RAW_H5AD:-}" ]]; then
-  echo "Set FRANGIEH_RAW_H5AD to the raw scPerturb Frangieh H5AD." >&2
-  exit 1
-fi
-if [[ ! -f "$FRANGIEH_RAW_H5AD" ]]; then
+if [[ -n "${FRANGIEH_RAW_H5AD:-}" && ! -f "$FRANGIEH_RAW_H5AD" ]]; then
   echo "H5AD not found: $FRANGIEH_RAW_H5AD" >&2
   exit 1
 fi
 
-RESULTS_ROOT="${LOCAL_PDRT_DATA_DIR:-$PROJECT_DIR/results}"
+# Load the lab data-directory config and export it so child R sessions inherit
+# it.  The guard keeps the reproduction package usable for anyone who sets the
+# variables by hand.  Without this an unset LOCAL_PDRT_DATA_DIR silently fell
+# back to $PROJECT_DIR/results, pointing the whole submission at the wrong tree.
+if [[ -z "${LOCAL_PDRT_DATA_DIR:-}" && -f "$HOME/.research_config" ]]; then
+  set -a; source "$HOME/.research_config"; set +a
+fi
+if [[ -z "${LOCAL_PDRT_DATA_DIR:-}" ]]; then
+  echo "ERROR: LOCAL_PDRT_DATA_DIR is not set and ~/.research_config is absent." >&2
+  echo "Set it, or pass FRANGIEH_INTERMEDIATE_DIR and" >&2
+  echo "FRANGIEH_EXPLORATORY_RESULTS_DIR explicitly." >&2
+  exit 1
+fi
+
+RESULTS_ROOT="$LOCAL_PDRT_DATA_DIR"
 INTERMEDIATE_DIR="${FRANGIEH_INTERMEDIATE_DIR:-$RESULTS_ROOT/frangieh-2021/intermediate-data}"
 OUTPUT_DIR="${FRANGIEH_EXPLORATORY_RESULTS_DIR:-$RESULTS_ROOT/frangieh-2021/exploratory-trans-pairs}"
 SGE_PROJECT="${PROJECT:-stat_bhaswar_team}"
@@ -85,23 +97,64 @@ mkdir -p "$OUTPUT_DIR/logs"
 RSCRIPT_BIN="$(command -v Rscript)"
 RUNNER="$SCRIPT_DIR/run_frangieh_exploratory_trans_pairs.R"
 AUDIT_FILE="$OUTPUT_DIR/manifests/frangieh-exploratory-expression-audit.csv"
+
+if [[ -n "${FRANGIEH_RAW_H5AD:-}" ]]; then
+  printf -v H5AD_FLAG -- '--h5ad %q ' "$FRANGIEH_RAW_H5AD"
+  BACKEND_LABEL="scPerturb H5AD"
+  BACKEND_ID="scperturb_h5ad"
+else
+  H5AD_FLAG=""
+  BACKEND_LABEL="ondisc ODM"
+  BACKEND_ID="ondisc_odm"
+fi
+
+# All array tasks share one locked expression audit and one set of manifest
+# CSVs.  Build them here on first use rather than requiring a separate
+# --manifest-only pass.  The step hashes the counts backing store once so the
+# array tasks inherit the MD5 instead of each rehashing several GB.
 if [[ ! -f "$AUDIT_FILE" ]]; then
-  echo "Missing locked expression audit: $AUDIT_FILE" >&2
-  echo "Run the runner once with --manifest-only and this output directory." >&2
+  echo "No locked expression audit in this output directory."
+  echo "Building manifests once ($BACKEND_LABEL); this hashes the counts"
+  echo "backing store and takes a few minutes ..."
+  # shellcheck disable=SC2086
+  if ! "$RSCRIPT_BIN" --vanilla "$RUNNER" $H5AD_FLAG \
+        --intermediate-dir "$INTERMEDIATE_DIR" --output-dir "$OUTPUT_DIR" \
+        --min-treated "$TREATED_FLOOR" --manifest-only; then
+    echo "ERROR: manifest build failed; nothing was submitted." >&2
+    exit 1
+  fi
+fi
+if [[ ! -f "$AUDIT_FILE" ]]; then
+  echo "ERROR: manifest build did not produce $AUDIT_FILE" >&2
   exit 1
 fi
 
-if [[ "$SCAN_MODE_VALUE" == "pilot" ]]; then
-  printf -v JOB_BODY '#!/usr/bin/env bash\nset -euo pipefail\ncd -- %q\nexec %q --vanilla %q --h5ad %q --intermediate-dir %q --output-dir %q --target-index "$SGE_TASK_ID" --pilot --min-treated %q --response-block-size %q --permutations %q --seed %q --cores %q\n' \
-    "$PROJECT_DIR" "$RSCRIPT_BIN" "$RUNNER" "$FRANGIEH_RAW_H5AD" \
-    "$INTERMEDIATE_DIR" "$OUTPUT_DIR" "$TREATED_FLOOR" "$BLOCK_SIZE" \
-    "$N_PERMUTATIONS" "$BASE_SEED" "$N_CORES"
-else
-  printf -v JOB_BODY '#!/usr/bin/env bash\nset -euo pipefail\ncd -- %q\nexec %q --vanilla %q --h5ad %q --intermediate-dir %q --output-dir %q --target-index "$SGE_TASK_ID" --min-treated %q --response-block-size %q --permutations %q --seed %q --cores %q\n' \
-    "$PROJECT_DIR" "$RSCRIPT_BIN" "$RUNNER" "$FRANGIEH_RAW_H5AD" \
-    "$INTERMEDIATE_DIR" "$OUTPUT_DIR" "$TREATED_FLOOR" "$BLOCK_SIZE" \
-    "$N_PERMUTATIONS" "$BASE_SEED" "$N_CORES"
+# Refuse a stale audit built for the other backend.  Without this the
+# submission would succeed and then all 241 array tasks would fail separately
+# on the queue when each revalidated the locked counts-source identity.
+# Parsed with read.csv rather than awk: the audit row embeds quoted fields that
+# themselves contain commas (the rechecked gene indices), so naive splitting on
+# "," reads the wrong column.
+AUDIT_BACKEND="$(
+  "$RSCRIPT_BIN" --vanilla -e \
+    'cat(as.character(utils::read.csv(commandArgs(TRUE)[1L],
+       stringsAsFactors = FALSE)$backend[[1L]]))' "$AUDIT_FILE" 2>/dev/null
+)"
+if [[ "$AUDIT_BACKEND" != "$BACKEND_ID" ]]; then
+  echo "ERROR: the existing audit was built for backend '$AUDIT_BACKEND'," >&2
+  echo "but this submission requests '$BACKEND_ID'." >&2
+  echo "Use a fresh FRANGIEH_EXPLORATORY_RESULTS_DIR for the other backend." >&2
+  exit 1
 fi
+if [[ "$SCAN_MODE_VALUE" == "pilot" ]]; then
+  PILOT_FLAG="--pilot "
+else
+  PILOT_FLAG=""
+fi
+printf -v JOB_BODY '#!/usr/bin/env bash\nset -euo pipefail\ncd -- %q\nexec %q --vanilla %q %s--intermediate-dir %q --output-dir %q --target-index "$SGE_TASK_ID" %s--min-treated %q --response-block-size %q --permutations %q --seed %q --cores %q\n' \
+  "$PROJECT_DIR" "$RSCRIPT_BIN" "$RUNNER" "$H5AD_FLAG" \
+  "$INTERMEDIATE_DIR" "$OUTPUT_DIR" "$PILOT_FLAG" "$TREATED_FLOOR" \
+  "$BLOCK_SIZE" "$N_PERMUTATIONS" "$BASE_SEED" "$N_CORES"
 
 N_TASKS=241
 if [[ "$TREATED_FLOOR" == "5" ]]; then
@@ -130,6 +183,6 @@ else
     "$N_TASKS"
 fi
 printf 'Output: %s\n' "$OUTPUT_DIR"
-printf 'mode=%s, min-treated=%s, B=%s, seed=%s, response block=%s, cores/task=%s\n' \
-  "$SCAN_MODE_VALUE" "$TREATED_FLOOR" "$N_PERMUTATIONS" "$BASE_SEED" \
-  "$BLOCK_SIZE" "$N_CORES"
+printf 'backend=%s, mode=%s, min-treated=%s, B=%s, seed=%s, response block=%s, cores/task=%s\n' \
+  "$BACKEND_LABEL" "$SCAN_MODE_VALUE" "$TREATED_FLOOR" "$N_PERMUTATIONS" \
+  "$BASE_SEED" "$BLOCK_SIZE" "$N_CORES"

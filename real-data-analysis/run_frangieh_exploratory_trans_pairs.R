@@ -13,6 +13,12 @@
 ## neither self-target positive controls nor non-targeting negative controls
 ## can enter the scan.
 ##
+## Raw counts come from the ondisc ODM -- the same accessor the production
+## control-pair workflow uses -- so the analysis path involves no log1p(CPM)
+## inversion.  --h5ad selects the scPerturb backend instead and restores the
+## reconstruction plus its audit chain, which is useful as an independent
+## cross-check of the ODM.
+##
 ## Each pair compares all 3,770 exact-one non-targeting cells with cells
 ## carrying exactly one guide for the selected target.  Barry et al.'s
 ## information-studentized score and the empirically studentized score use the
@@ -36,12 +42,16 @@ source(helper_path)
 usage <- function() {
   paste(
     "Usage: Rscript --vanilla run_frangieh_exploratory_trans_pairs.R",
-    "  --h5ad FILE [--intermediate-dir DIR] [--output-dir DIR]",
+    "  [--h5ad FILE] [--intermediate-dir DIR] [--output-dir DIR]",
     "  {--target GENE | --target-index N | --target-range A:B | --all-targets}",
     "  [--response-range A:B] [--response-block-size 100] [--pilot]",
     "  [--min-treated 10]",
     "  [--permutations 4999] [--permutation-batch-size 128]",
     "  [--seed 20260822] [--cores 1] [--overwrite] [--manifest-only]",
+    "",
+    "Counts are read from the ondisc ODM in --intermediate-dir by default.",
+    "--h5ad FILE selects the scPerturb backend, which reconstructs integer",
+    "counts from log1p(CPM) and keeps the original inversion audit chain.",
     sep = "\n"
   )
 }
@@ -157,17 +167,26 @@ if (isTRUE(cli$help)) {
   cat(usage(), "\n")
   quit(save = "no", status = 0L)
 }
-if (is.null(cli$h5ad)) stop("--h5ad is required\n", usage())
-if (!file.exists(cli$h5ad)) stop("H5AD file not found: ", cli$h5ad)
-if (!requireNamespace("HDF5Array", quietly = TRUE) ||
-    !requireNamespace("rhdf5", quietly = TRUE)) {
-  stop("HDF5Array and rhdf5 are required")
+## Counts come from the ondisc ODM by default -- the same accessor the
+## production control-pair workflow uses -- so no log1p(CPM) inversion, no
+## H5AD row alignment, and no locked file-identity audit are involved.
+## Passing --h5ad selects the scPerturb backend instead, which reconstructs
+## integer counts from log1p(CPM) and keeps the original audit chain.
+h5ad_mode <- !is.null(cli$h5ad)
+if (h5ad_mode) {
+  if (!file.exists(cli$h5ad)) stop("H5AD file not found: ", cli$h5ad)
+  if (!requireNamespace("HDF5Array", quietly = TRUE) ||
+      !requireNamespace("rhdf5", quietly = TRUE)) {
+    stop("HDF5Array and rhdf5 are required for --h5ad")
+  }
+  h5ad_file <- normalizePath(cli$h5ad)
+} else {
+  h5ad_file <- NA_character_
 }
-h5ad_file <- normalizePath(cli$h5ad)
-h5ad_identity <- function(path) {
+file_identity <- function(path) {
   info <- file.info(path)
   if (nrow(info) != 1L || is.na(info$size) || is.na(info$mtime)) {
-    stop("Could not read H5AD file identity: ", path)
+    stop("Could not read file identity: ", path)
   }
   list(
     path = normalizePath(path),
@@ -177,6 +196,7 @@ h5ad_identity <- function(path) {
     )
   )
 }
+h5ad_identity <- file_identity
 
 results_root <- Sys.getenv(
   "LOCAL_PDRT_DATA_DIR", unset = file.path(project_root, "results")
@@ -248,7 +268,9 @@ PILOT_SIZE <- 5000L
 PILOT_ASSIGNMENT_SEED <- 20260823L
 
 cat("Frangieh exploratory trans-pair shard\n")
-cat("  H5AD:        ", h5ad_file, "\n", sep = "")
+cat("  backend:     ", if (h5ad_mode) "scPerturb H5AD" else "ondisc ODM",
+    "\n", sep = "")
+if (h5ad_mode) cat("  H5AD:        ", h5ad_file, "\n", sep = "")
 cat("  intermediate:", intermediate_dir, "\n", sep = " ")
 cat("  output:      ", output_dir, "\n", sep = "")
 cat("  B / cores:   ", B, " / ", cores, "\n", sep = "")
@@ -310,7 +332,54 @@ if (length(all_target_genes) != EXPECTED_TARGETS ||
   stop("Unexpected Frangieh guide-target manifest")
 }
 
-## ---- Audited H5AD alignment and exact-one exposure manifest --------------
+## ---- Exact-one-guide exposure manifest -----------------------------------
+## ODM backend: MOI and guide identity come from the same guide modality the
+## production control-pair workflow uses.  A cell with MOI == 1 carries a
+## single guide, so its target is the unique nonzero row of that column.  No
+## H5AD alignment is needed because the ODM is already the 57,624 analysis
+## cells in analysis order.
+if (!h5ad_mode) {
+  var_gene <- gene_ids
+  X_delayed <- NULL
+  aligned_control_global_idx <- seq_len(n_cells)
+  control_global_idx <- seq_len(n_cells)
+
+  guide_presence <- modalities$grna[[grna_features$grna_id, ]]
+  guide_presence <- methods::as(guide_presence, "TsparseMatrix")
+  if (!identical(as.integer(dim(guide_presence)),
+                 c(nrow(grna_features), n_cells))) {
+    stop("Unexpected guide-assignment matrix dimensions")
+  }
+  if (!identical(as.integer(Matrix::colSums(guide_presence)), cell_moi)) {
+    stop("Guide-assignment column sums disagree with the stored cell MOI")
+  }
+
+  exact_one_guide <- cell_moi == 1L
+  entry_cell <- guide_presence@j + 1L
+  entry_guide <- guide_presence@i + 1L
+  keep_entry <- exact_one_guide[entry_cell]
+  guide_row_of_cell <- rep(NA_integer_, n_cells)
+  guide_row_of_cell[entry_cell[keep_entry]] <- entry_guide[keep_entry]
+  if (any(is.na(guide_row_of_cell[exact_one_guide]))) {
+    stop("An MOI==1 cell lacks a recognized guide")
+  }
+
+  guide_type <- rep(NA_character_, n_cells)
+  guide_target <- rep(NA_character_, n_cells)
+  guide_type[exact_one_guide] <-
+    grna_features$target_type[guide_row_of_cell[exact_one_guide]]
+  guide_target[exact_one_guide] <-
+    as.character(grna_features$target[guide_row_of_cell[exact_one_guide]])
+  pure_nt <- exact_one_guide & guide_type == "non-targeting"
+  is_targeting <- exact_one_guide & guide_type == "gene"
+  pure_nt[is.na(pure_nt)] <- FALSE
+  is_targeting[is.na(is_targeting)] <- FALSE
+  if (sum(pure_nt) != EXPECTED_EXACT_ONE_NT ||
+      sum(is_targeting) != EXPECTED_EXACT_ONE_TARGETING) {
+    stop("Unexpected exact-one-guide classification")
+  }
+  rm(guide_presence, entry_cell, entry_guide, keep_entry, guide_row_of_cell)
+} else {
 h5_listing <- rhdf5::h5ls(h5ad_file, recursive = TRUE)
 dataset_paths <- paste0(
   ifelse(h5_listing$group == "/", "", h5_listing$group),
@@ -386,6 +455,7 @@ if (sum(pure_nt) != EXPECTED_EXACT_ONE_NT ||
     sum(is_targeting) != EXPECTED_EXACT_ONE_TARGETING) {
   stop("Unexpected exact-one-guide classification")
 }
+}
 
 ## ---- Raw-count and stored-expression audit -------------------------------
 ## The full raw-H5AD audit underlying this workflow found maximum absolute
@@ -412,27 +482,82 @@ recover_h5ad_counts <- function(log_cpm, depths, context, tolerance = 5e-3) {
   counts
 }
 
+## Backend-neutral raw-count reader: genes are addressed by identifier and
+## cells by local analysis index, so every caller below is backend-agnostic.
+## The ODM already stores raw integer counts, so nothing is reconstructed and
+## the rounding residual is exactly zero by construction.
+read_counts <- function(genes, cells, context) {
+  if (h5ad_mode) {
+    rows <- match(genes, var_gene)
+    if (anyNA(rows)) stop("A requested gene is absent from the H5AD: ", context)
+    return(recover_h5ad_counts(
+      X_delayed[rows, aligned_control_global_idx[cells], drop = FALSE],
+      cell_umi[cells], context
+    ))
+  }
+  counts <- as.matrix(modalities$gene[[genes, ]])[, cells, drop = FALSE]
+  storage.mode(counts) <- "double"
+  if (any(!is.finite(counts)) || any(counts < 0) ||
+      any(abs(counts - round(counts)) > 1e-8)) {
+    stop("The ODM returned non-integer or negative counts for ", context)
+  }
+  attr(counts, "max_rounding_error") <- 0
+  counts
+}
+
+## Whole-transcriptome UMI reconciliation.  Under the H5AD backend this is the
+## inversion audit and every shard repeats it; under the ODM backend it is a
+## column-total consistency check whose cost is cell-wise access, so it runs
+## only in the one-time --manifest-only pass.
 audit_local_idx <- unique(as.integer(round(seq(
   1, n_cells, length.out = 20L
 ))))
-audit_counts <- recover_h5ad_counts(
-  X_delayed[, aligned_control_global_idx[audit_local_idx], drop = FALSE],
-  cell_umi[audit_local_idx], "20-cell whole-transcriptome audit"
-)
-count_inversion_audit_error <- attr(audit_counts, "max_rounding_error")
-if (!identical(as.numeric(colSums(audit_counts)), cell_umi[audit_local_idx])) {
-  stop("Reconstructed whole-transcriptome UMI totals do not match metadata")
+if (h5ad_mode) {
+  audit_counts <- recover_h5ad_counts(
+    X_delayed[, aligned_control_global_idx[audit_local_idx], drop = FALSE],
+    cell_umi[audit_local_idx], "20-cell whole-transcriptome audit"
+  )
+  count_inversion_audit_error <- attr(audit_counts, "max_rounding_error")
+  if (!identical(as.numeric(colSums(audit_counts)),
+                 cell_umi[audit_local_idx])) {
+    stop("Reconstructed whole-transcriptome UMI totals do not match metadata")
+  }
+  rm(audit_counts)
+} else {
+  count_inversion_audit_error <- 0
+  if (manifest_only) {
+    audit_counts <- modalities$gene[[, audit_local_idx]]
+    if (!identical(as.numeric(Matrix::colSums(audit_counts)),
+                   cell_umi[audit_local_idx])) {
+      stop("ODM whole-transcriptome UMI totals do not match metadata")
+    }
+    rm(audit_counts)
+  }
 }
-rm(audit_counts)
 
+## Stored mean/nonzero metadata drives response selection, so it is audited
+## against raw counts on 20 genes spanning the complete feature order.  The
+## ODM backend can afford this in every shard; the H5AD backend cannot, and
+## inherits the result from the locked --manifest-only audit instead.
 audit_gene_local_idx <- unique(as.integer(round(seq(
   1, length(gene_ids), length.out = 20L
 ))))
-if (manifest_only) {
-  audit_gene_h5_idx <- match(gene_ids[audit_gene_local_idx], var_gene)
-  audit_gene_counts <- recover_h5ad_counts(
-    X_delayed[audit_gene_h5_idx, aligned_control_global_idx, drop = FALSE],
-    cell_umi, "20-gene all-Control expression-metadata audit"
+## The counts source is the H5AD under --h5ad and the ODM backing store
+## otherwise; both are identified the same way (full MD5 once under
+## --manifest-only, then path/size/mtime per shard).
+counts_backend <- if (h5ad_mode) "scperturb_h5ad" else "ondisc_odm"
+counts_source_file <- if (h5ad_mode) {
+  h5ad_file
+} else {
+  normalizePath(modalities$gene@ondisc_matrix@h5_file)
+}
+if (!file.exists(counts_source_file)) {
+  stop("Counts backing store not found: ", counts_source_file)
+}
+if (manifest_only || !h5ad_mode) {
+  audit_gene_counts <- read_counts(
+    gene_ids[audit_gene_local_idx], seq_len(n_cells),
+    "20-gene all-Control expression-metadata audit"
   )
   audit_gene_mean_difference <- max(abs(
     rowMeans(audit_gene_counts) -
@@ -445,18 +570,22 @@ if (manifest_only) {
   gene_audit_inversion_error <- attr(audit_gene_counts,
                                      "max_rounding_error")
   rm(audit_gene_counts)
-  h5ad_before_hash <- h5ad_identity(h5ad_file)
-  cat("  hashing full H5AD once for the locked expression audit ...\n")
-  locked_h5ad_md5 <- unname(tools::md5sum(h5ad_file))
-  h5ad_after_hash <- h5ad_identity(h5ad_file)
-  if (!identical(h5ad_before_hash, h5ad_after_hash) ||
-      length(locked_h5ad_md5) != 1L || is.na(locked_h5ad_md5) ||
-      !grepl("^[0-9a-f]{32}$", locked_h5ad_md5)) {
-    stop("H5AD identity changed or hashing failed during manifest audit")
+}
+if (manifest_only) {
+  before_hash <- file_identity(counts_source_file)
+  cat("  hashing the full counts backing store once (", counts_backend,
+      ") ...\n", sep = "")
+  locked_counts_md5 <- unname(tools::md5sum(counts_source_file))
+  after_hash <- file_identity(counts_source_file)
+  if (!identical(before_hash, after_hash) ||
+      length(locked_counts_md5) != 1L || is.na(locked_counts_md5) ||
+      !grepl("^[0-9a-f]{32}$", locked_counts_md5)) {
+    stop("Counts-source identity changed or hashing failed during the audit")
   }
-  verified_h5ad_identity <- h5ad_after_hash
+  verified_counts_identity <- after_hash
   expression_audit <- data.frame(
-    schema_version = 2L,
+    schema_version = 3L,
+    backend = counts_backend,
     n_aligned_control_cells = n_cells,
     n_genes = length(gene_ids),
     n_rechecked_genes = length(audit_gene_local_idx),
@@ -464,13 +593,13 @@ if (manifest_only) {
     rechecked_mean_max_abs_difference = audit_gene_mean_difference,
     rechecked_nonzero_max_abs_difference = audit_gene_nonzero_difference,
     rechecked_inversion_max_abs_residual = gene_audit_inversion_error,
-    full_direct_mean_max_abs_difference = 2.78e-17,
+    full_direct_mean_max_abs_difference = if (h5ad_mode) 2.78e-17 else 0,
     full_direct_nonzero_max_abs_difference = 0,
-    full_direct_inversion_max_abs_residual = 0.00164278,
-    h5ad_path = h5ad_after_hash$path,
-    h5ad_size_bytes = h5ad_after_hash$size_bytes,
-    h5ad_mtime_utc = h5ad_after_hash$mtime_utc,
-    h5ad_md5 = locked_h5ad_md5,
+    full_direct_inversion_max_abs_residual = if (h5ad_mode) 0.00164278 else 0,
+    counts_source_path = after_hash$path,
+    counts_source_size_bytes = after_hash$size_bytes,
+    counts_source_mtime_utc = after_hash$mtime_utc,
+    counts_source_md5 = locked_counts_md5,
     shard_identity_check = paste(
       "locked normalized path, byte size, and UTC mtime must match;",
       "full MD5 is inherited from this manifest-only audit"
@@ -486,38 +615,44 @@ if (manifest_only) {
   }
   expression_audit <- utils::read.csv(expression_audit_path,
                                       stringsAsFactors = FALSE)
-  current_h5ad_identity <- h5ad_identity(h5ad_file)
+  current_counts_identity <- file_identity(counts_source_file)
   required_identity_columns <- c(
-    "h5ad_path", "h5ad_size_bytes", "h5ad_mtime_utc", "h5ad_md5"
+    "backend", "counts_source_path", "counts_source_size_bytes",
+    "counts_source_mtime_utc", "counts_source_md5"
   )
   if (nrow(expression_audit) != 1L ||
       !all(required_identity_columns %in% names(expression_audit)) ||
-      expression_audit$schema_version != 2L ||
+      expression_audit$schema_version != 3L ||
+      !identical(expression_audit$backend, counts_backend) ||
       expression_audit$n_aligned_control_cells != n_cells ||
       expression_audit$n_genes != length(gene_ids) ||
-      !identical(expression_audit$h5ad_path,
-                 current_h5ad_identity$path) ||
-      expression_audit$h5ad_size_bytes !=
-        current_h5ad_identity$size_bytes ||
-      !identical(expression_audit$h5ad_mtime_utc,
-                 current_h5ad_identity$mtime_utc) ||
-      is.na(expression_audit$h5ad_md5) ||
-      !grepl("^[0-9a-f]{32}$", expression_audit$h5ad_md5)) {
-    stop("Locked expression audit does not match this H5AD/local schema")
+      !identical(expression_audit$counts_source_path,
+                 current_counts_identity$path) ||
+      expression_audit$counts_source_size_bytes !=
+        current_counts_identity$size_bytes ||
+      !identical(expression_audit$counts_source_mtime_utc,
+                 current_counts_identity$mtime_utc) ||
+      is.na(expression_audit$counts_source_md5) ||
+      !grepl("^[0-9a-f]{32}$", expression_audit$counts_source_md5)) {
+    stop("Locked expression audit does not match this counts source/schema")
   }
-  locked_h5ad_md5 <- expression_audit$h5ad_md5
-  verified_h5ad_identity <- current_h5ad_identity
-  audit_gene_mean_difference <-
-    expression_audit$rechecked_mean_max_abs_difference
-  audit_gene_nonzero_difference <-
-    expression_audit$rechecked_nonzero_max_abs_difference
-  gene_audit_inversion_error <-
-    expression_audit$rechecked_inversion_max_abs_residual
+  locked_counts_md5 <- expression_audit$counts_source_md5
+  verified_counts_identity <- current_counts_identity
+  ## The ODM backend recomputed the metadata audit above; only the H5AD
+  ## backend inherits it, because its recheck needs the whole matrix.
+  if (h5ad_mode) {
+    audit_gene_mean_difference <-
+      expression_audit$rechecked_mean_max_abs_difference
+    audit_gene_nonzero_difference <-
+      expression_audit$rechecked_nonzero_max_abs_difference
+    gene_audit_inversion_error <-
+      expression_audit$rechecked_inversion_max_abs_residual
+  }
 }
 if (!is.finite(audit_gene_mean_difference) ||
     audit_gene_mean_difference > 1e-12 ||
     audit_gene_nonzero_difference != 0) {
-  stop("Stored global expression metadata failed the raw-H5AD audit")
+  stop("Stored global expression metadata failed its raw-count audit")
 }
 
 ## ---- Association-blind response manifest --------------------------------
@@ -843,8 +978,9 @@ if ((file.exists(rds_path) || file.exists(csv_path)) && !overwrite) {
   stop("Shard output already exists; use --overwrite: ", stem)
 }
 
-response_h5_rows <- match(selected_responses$response_gene, var_gene)
-if (anyNA(response_h5_rows)) stop("A selected response is absent from H5AD")
+if (anyNA(match(selected_responses$response_gene, var_gene))) {
+  stop("A selected response is absent from the counts backing store")
+}
 
 ## ---- Paired score/permutation primitives ---------------------------------
 draw_global_label_matrix <- function(n, n_exposed, n_draws) {
@@ -933,10 +1069,21 @@ run_pair <- function(Y, X, Z_design, exposure_row, response_row) {
     }
     cache <- precompute_score_cache(Y, Z_design)
     observed <- precompute_score_pair(X, cache)
-    if (isTRUE(cache$degenerate) || isTRUE(observed$degenerate)) {
-      return(failure_row(exposure_row, response_row, pair_seed,
-                         n_pair_cells, "degenerate efficient-score cache",
-                         status = "degenerate"))
+    ## Distinguish the two causes.  A degenerate nuisance fit depends only on
+    ## (Y, Z_design), which are held fixed across the whole permutation orbit,
+    ## so it is label-invariant and a pair failing this way may be excluded by
+    ## a pre-declared rule.  A degenerate observed score depends on X and is
+    ## NOT permutation-invariant, so such a pair must never be dropped on that
+    ## basis; it is reported separately for conservative handling.
+    if (isTRUE(cache$degenerate)) {
+      return(failure_row(exposure_row, response_row, pair_seed, n_pair_cells,
+                         "degenerate negative-binomial nuisance fit on (Y, Z)",
+                         status = "degenerate_nuisance_fit"))
+    }
+    if (isTRUE(observed$degenerate)) {
+      return(failure_row(exposure_row, response_row, pair_seed, n_pair_cells,
+                         "degenerate observed efficient score (depends on X)",
+                         status = "degenerate_observed_score"))
     }
 
     hits_information_abs <- hits_empirical_abs <- 0
@@ -1045,7 +1192,6 @@ for (exposure_position in seq_along(selected_exposure_indices)) {
   if (qr(Z_design)$rank != ncol(Z_design)) {
     stop("Rank-deficient pairwise design for ", exposure_row$exposure_gene)
   }
-  h5_columns <- aligned_control_global_idx[cell_idx]
 
   cat(sprintf("Exposure %d/%d: %s (%d treated); %d responses\n",
               exposure_index, nrow(eligible_exposures),
@@ -1058,10 +1204,9 @@ for (exposure_position in seq_along(selected_exposure_indices)) {
     last <- min(nrow(exposure_pairs), first + response_block_size - 1L)
     block_rows <- seq.int(first, last)
     block_manifest <- exposure_response_manifest[block_rows, , drop = FALSE]
-    block_h5_rows <- response_h5_rows[block_manifest$response_rank]
-    Y_block <- recover_h5ad_counts(
-      X_delayed[block_h5_rows, h5_columns, drop = FALSE],
-      cell_umi[cell_idx],
+    Y_block <- read_counts(
+      selected_responses$response_gene[block_manifest$response_rank],
+      cell_idx,
       paste0("target ", exposure_row$exposure_gene, " response block ",
              min(block_manifest$response_rank), ":",
              max(block_manifest$response_rank))
@@ -1126,6 +1271,7 @@ test_seconds <- as.numeric(difftime(Sys.time(), test_start, units = "secs"))
 input_paths <- file.path(intermediate_dir, required_inputs)
 config <- list(
   analysis = "frangieh_label_invariant_exploratory_trans_pairs",
+  counts_backend = counts_backend,
   response_selection = paste0(
     "exclude all 248 perturbation targets; global Control n_nonzero >= ",
     GLOBAL_DETECTION_MIN,
@@ -1153,6 +1299,11 @@ config <- list(
   permutations = B,
   permutation_batch_size = permutation_batch_size,
   primary_test = "two-sided absolute-statistic global label permutation",
+  declared_exclusion_rule = paste(
+    "pairs whose negative-binomial nuisance fit on (Y, Z_design) degenerates",
+    "are excluded; that fit is held fixed across the permutation orbit, so",
+    "the criterion is invariant to every guide-label permutation"
+  ),
   seed = base_seed,
   pair_seed_formula =
     "(seed + 10007*((exposure_index-1)*5000+response_rank)) mod 2147483646 + 1",
@@ -1179,8 +1330,12 @@ data_checks <- list(
   ),
   n_pairs = nrow(pair_results),
   n_ok = sum(pair_results$status == "ok"),
-  n_degenerate = sum(pair_results$status == "degenerate"),
+  n_degenerate_nuisance_fit =
+    sum(pair_results$status == "degenerate_nuisance_fit"),
+  n_degenerate_observed_score =
+    sum(pair_results$status == "degenerate_observed_score"),
   n_error = sum(pair_results$status == "error"),
+  counts_backend = counts_backend,
   whole_transcriptome_count_inversion_max_error =
     count_inversion_audit_error,
   all_control_gene_audit_count_inversion_max_error =
@@ -1199,11 +1354,12 @@ data_checks <- list(
 provenance <- list(
   created_utc = format(Sys.time(), tz = "UTC", usetz = TRUE),
   command = commandArgs(),
-  h5ad_file = verified_h5ad_identity$path,
-  h5ad_size_bytes = verified_h5ad_identity$size_bytes,
-  h5ad_mtime_utc = verified_h5ad_identity$mtime_utc,
-  h5ad_md5 = locked_h5ad_md5,
-  h5ad_identity_verification = if (manifest_only) {
+  counts_backend = counts_backend,
+  counts_source_file = verified_counts_identity$path,
+  counts_source_size_bytes = verified_counts_identity$size_bytes,
+  counts_source_mtime_utc = verified_counts_identity$mtime_utc,
+  counts_source_md5 = locked_counts_md5,
+  counts_identity_verification = if (manifest_only) {
     "full MD5 computed after raw audits; path/size/mtime stable across hash"
   } else {
     paste(
@@ -1218,7 +1374,8 @@ provenance <- list(
   score_helper_path = normalizePath(helper_path),
   score_helper_md5 = unname(tools::md5sum(helper_path)),
   package_versions = vapply(
-    c("ondisc", "Matrix", "MASS", "HDF5Array", "rhdf5"),
+    c("ondisc", "Matrix", "MASS",
+      if (h5ad_mode) c("HDF5Array", "rhdf5") else character()),
     function(pkg) as.character(utils::packageVersion(pkg)), character(1)
   ),
   session_info = utils::sessionInfo()
@@ -1248,10 +1405,12 @@ utils::write.csv(pair_results, tmp_csv, row.names = FALSE, na = "")
 atomic_publish(tmp_rds, rds_path, overwrite = overwrite)
 atomic_publish(tmp_csv, csv_path, overwrite = overwrite)
 
-cat(sprintf("Completed %d pairs (%d ok, %d degenerate, %d error) in %.1fs\n",
-            nrow(pair_results), sum(pair_results$status == "ok"),
-            sum(pair_results$status == "degenerate"),
-            sum(pair_results$status == "error"), test_seconds))
+cat(sprintf(
+  "Completed %d pairs (%d ok, %d degenerate-nuisance, %d degenerate-score, %d error) in %.1fs\n",
+  nrow(pair_results), sum(pair_results$status == "ok"),
+  sum(pair_results$status == "degenerate_nuisance_fit"),
+  sum(pair_results$status == "degenerate_observed_score"),
+  sum(pair_results$status == "error"), test_seconds))
 cat("  RDS: ", rds_path, "\n", sep = "")
 cat("  CSV: ", csv_path, "\n", sep = "")
 if (any(pair_results$status != "ok")) {

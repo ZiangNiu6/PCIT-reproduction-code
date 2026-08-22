@@ -4,6 +4,25 @@ This standalone workflow scans low-expression trans pairs without placing the
 positive or negative controls from the manuscript experiment in the candidate
 set. It does not modify or feed the production Frangieh FDR workflow.
 
+## Counts backend
+
+Raw counts are read from the ondisc ODM in the intermediate directory --
+the same accessor the production control-pair workflow uses -- so the
+analysis path performs no log1p(CPM) inversion, needs no H5AD row alignment,
+and locks no 6 GB file identity. The ODM reproduces every audited invariant
+exactly: 57,624 cells, 23,712 genes, 3,770 exact-one non-targeting cells,
+26,716 exact-one targeting cells, 12,829 eligible responses, the same 5,000
+response panel (CCNT2-AS1 .. PRELID2), and 241 of 248 eligible exposures.
+Stored `mean_expression` and `n_nonzero` agree with raw ODM counts to zero
+difference, and every shard rechecks that on 20 genes spanning the full
+feature order.
+
+Passing `--h5ad FILE` selects the scPerturb backend instead, which
+reconstructs integer counts from log1p(CPM) and keeps the original
+alignment/inversion audit chain. Keep it for cross-validation: an ODM shard
+and an H5AD shard must produce identical statistics, and the combiner refuses
+to merge shards from different backends.
+
 ## Fixed candidate universe
 
 - Cells: the Frangieh Control condition, restricted during testing to cells
@@ -50,26 +69,25 @@ Create and audit only the fixed manifests:
 
 ```bash
 Rscript --vanilla reproduction-code/real-data-analysis/run_frangieh_exploratory_trans_pairs.R \
-  --h5ad /absolute/path/frangieh_2021_raw.h5ad \
   --intermediate-dir /absolute/path/frangieh-2021/intermediate-data \
   --output-dir results/frangieh-2021/exploratory-trans-pairs \
   --manifest-only
 ```
 
 Run this once in the final output directory before launching array tasks. It
-performs the across-all-Control raw-count metadata recheck and writes the
-locked expression-audit manifest required by every shard. This one-time step
-also hashes the complete H5AD. Array shards avoid repeatedly hashing the 6 GB
-file: they require the same normalized path, byte size, and UTC modification
-time, then inherit the locked full-file MD5 into their provenance. If the file
-is copied to a different path or its identity changes, rerun `--manifest-only`
-in a new output directory.
+performs the across-all-Control raw-count metadata recheck, reconciles
+whole-transcriptome UMI totals, and writes the locked expression-audit
+manifest required by every shard. This one-time step also hashes the complete
+counts backing store (the `.odm` file, or the H5AD under `--h5ad`). Array
+shards do not rehash it: they require the same normalized path, byte size, and
+UTC modification time, then inherit the locked full-file MD5 into their
+provenance. If the backing store is copied to a different path or its identity
+changes, rerun `--manifest-only` in a new output directory.
 
 Run one perturbation's frozen-pilot shard:
 
 ```bash
 Rscript --vanilla reproduction-code/real-data-analysis/run_frangieh_exploratory_trans_pairs.R \
-  --h5ad /absolute/path/frangieh_2021_raw.h5ad \
   --intermediate-dir /absolute/path/frangieh-2021/intermediate-data \
   --output-dir results/frangieh-2021/exploratory-trans-pairs \
   --target-index 1 --pilot --min-treated 10 --response-block-size 100 \
@@ -90,7 +108,6 @@ The launcher defaults to the frozen pilot and submits SGE tasks 1--241, one
 task per primary eligible perturbation:
 
 ```bash
-export FRANGIEH_RAW_H5AD=/absolute/path/frangieh_2021_raw.h5ad
 export FRANGIEH_INTERMEDIATE_DIR=/absolute/path/frangieh-2021/intermediate-data
 export FRANGIEH_EXPLORATORY_RESULTS_DIR=/absolute/path/exploratory-trans-pairs
 export PERMUTATIONS=4999
@@ -140,8 +157,8 @@ Rscript --vanilla reproduction-code/real-data-analysis/combine_frangieh_explorat
 ```
 
 The combiner requires identical manifest hashes, runner/helper hashes, input
-hashes, locked H5AD identity/full MD5, package versions, RNG settings, `B`, and
-seed. It row-matches every result to the declared pair, exposure, response,
+hashes, counts backend, locked counts-source identity/full MD5, package
+versions, RNG settings, `B`, and seed. It row-matches every result to the declared pair, exposure, response,
 and frozen-pilot manifests; checks seeds, hit counts, and p-value formulas;
 rejects duplicate or non-OK pairs; and refuses output unless the pilot has exactly
 5,000 unique responses with 20--21 pairs for each of all 241 exposures.

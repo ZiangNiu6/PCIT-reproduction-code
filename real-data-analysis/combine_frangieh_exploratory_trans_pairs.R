@@ -134,10 +134,15 @@ expected_scan_mode <- if (mode == "pilot") {
 } else {
   "declared_grid_or_range"
 }
+## The runner derives and publishes the frozen-pilot manifest whenever
+## min_treated == 10, whether or not the shard itself is a --pilot shard, so
+## the expected manifest set keys on min_treated rather than on the mode.
+## Keying it on the mode made every full-grid min-treated-10 shard fail the
+## provenance gate below.
 expected_manifest_names <- c(
   "expression_audit", "response_universe", "selected_responses", "exposures"
 )
-if (mode == "pilot") {
+if (min_treated == 10L) {
   expected_manifest_names <- c(
     expected_manifest_names, "association_blind_pilot_5000"
   )
@@ -145,6 +150,7 @@ if (mode == "pilot") {
 
 baseline <- NULL
 pair_chunks <- vector("list", length(candidate))
+excluded_chunks <- vector("list", length(candidate))
 shard_rows <- vector("list", length(candidate))
 
 for (i in seq_along(candidate)) {
@@ -161,16 +167,18 @@ for (i in seq_along(candidate)) {
   pairs <- shard$pair_results
   declared <- shard$pair_manifest
   required_provenance <- c(
-    "h5ad_file", "h5ad_size_bytes", "h5ad_mtime_utc", "h5ad_md5",
-    "h5ad_identity_verification", "input_md5", "script_md5",
+    "counts_backend", "counts_source_file", "counts_source_size_bytes",
+    "counts_source_mtime_utc", "counts_source_md5",
+    "counts_identity_verification", "input_md5", "script_md5",
     "score_helper_md5", "package_versions"
   )
   if (!all(required_provenance %in% names(prov)) ||
       !identical(names(checks$manifest_md5), expected_manifest_names) ||
       anyNA(checks$manifest_md5) ||
       any(!grepl("^[0-9a-f]{32}$", checks$manifest_md5)) ||
-      length(prov$h5ad_md5) != 1L || is.na(prov$h5ad_md5) ||
-      !grepl("^[0-9a-f]{32}$", prov$h5ad_md5) ||
+      length(prov$counts_source_md5) != 1L || is.na(prov$counts_source_md5) ||
+      !grepl("^[0-9a-f]{32}$", prov$counts_source_md5) ||
+      !prov$counts_backend %in% c("ondisc_odm", "scperturb_h5ad") ||
       is.null(names(prov$input_md5)) ||
       is.null(names(prov$package_versions))) {
     stop("Manifest hashes or provenance are incomplete: ", basename(file))
@@ -273,9 +281,30 @@ for (i in seq_along(candidate)) {
            basename(file))
     }
   }
-  if (any(pairs$status != "ok") || anyNA(pairs$p_two_sided_barry) ||
-      anyNA(pairs$p_two_sided_empirical)) {
-    stop("Shard contains a non-ok or missing-p pair: ", basename(file))
+  ## Pairs whose NB nuisance fit degenerates are excluded by the pre-declared,
+  ## label-invariant rule: that fit is a function of (Y, Z_design) alone and is
+  ## held fixed across the permutation orbit, so excluding them cannot depend
+  ## on the exposure assignment.  Every other non-ok status is fatal -- in
+  ## particular a degenerate OBSERVED score depends on X and must never be
+  ## dropped on that basis.
+  excluded <- pairs$status == "degenerate_nuisance_fit"
+  if (any(!pairs$status[!excluded] %in% "ok")) {
+    stop("Shard contains a non-ok pair outside the declared exclusion rule: ",
+         basename(file), " (",
+         paste(unique(pairs$status[!excluded & pairs$status != "ok"]),
+               collapse = ", "), ")")
+  }
+  shard_excluded <- pairs[excluded, c("pair_id", "pilot_pair_index",
+                                      "exposure_index", "exposure_gene",
+                                      "response_gene", "response_rank",
+                                      "status", "error_message"),
+                          drop = FALSE]
+  pairs <- pairs[!excluded, , drop = FALSE]
+  if (nrow(pairs) < 1L) {
+    stop("Every pair in the shard was excluded: ", basename(file))
+  }
+  if (anyNA(pairs$p_two_sided_barry) || anyNA(pairs$p_two_sided_empirical)) {
+    stop("Shard contains a missing-p pair: ", basename(file))
   }
   pair_index <- (as.double(pairs$exposure_index) - 1) * 5000 +
     as.double(pairs$response_rank)
@@ -298,11 +327,12 @@ for (i in seq_along(candidate)) {
     exposure_manifest = shard$exposure_manifest,
     response_manifest = shard$response_manifest,
     pilot_manifest = if (mode == "pilot") shard$pilot_manifest else NULL,
-    h5ad_file = prov$h5ad_file,
-    h5ad_size_bytes = prov$h5ad_size_bytes,
-    h5ad_mtime_utc = prov$h5ad_mtime_utc,
-    h5ad_md5 = prov$h5ad_md5,
-    h5ad_identity_verification = prov$h5ad_identity_verification,
+    counts_backend = prov$counts_backend,
+    counts_source_file = prov$counts_source_file,
+    counts_source_size_bytes = prov$counts_source_size_bytes,
+    counts_source_mtime_utc = prov$counts_source_mtime_utc,
+    counts_source_md5 = prov$counts_source_md5,
+    counts_identity_verification = prov$counts_identity_verification,
     input_md5 = prov$input_md5,
     runner_script_md5 = prov$script_md5,
     score_helper_md5 = prov$score_helper_md5,
@@ -320,14 +350,17 @@ for (i in seq_along(candidate)) {
         !identical(signature$response_manifest,
                    baseline$response_manifest) ||
         !identical(signature$pilot_manifest, baseline$pilot_manifest) ||
-        !identical(signature$h5ad_file, baseline$h5ad_file) ||
-        !identical(signature$h5ad_size_bytes,
-                   baseline$h5ad_size_bytes) ||
-        !identical(signature$h5ad_mtime_utc,
-                   baseline$h5ad_mtime_utc) ||
-        !identical(signature$h5ad_md5, baseline$h5ad_md5) ||
-        !identical(signature$h5ad_identity_verification,
-                   baseline$h5ad_identity_verification) ||
+        !identical(signature$counts_backend, baseline$counts_backend) ||
+        !identical(signature$counts_source_file,
+                   baseline$counts_source_file) ||
+        !identical(signature$counts_source_size_bytes,
+                   baseline$counts_source_size_bytes) ||
+        !identical(signature$counts_source_mtime_utc,
+                   baseline$counts_source_mtime_utc) ||
+        !identical(signature$counts_source_md5,
+                   baseline$counts_source_md5) ||
+        !identical(signature$counts_identity_verification,
+                   baseline$counts_identity_verification) ||
         !same_named_atomic(signature$input_md5, baseline$input_md5) ||
         !identical(signature$runner_script_md5,
                    baseline$runner_script_md5) ||
@@ -342,15 +375,17 @@ for (i in seq_along(candidate)) {
     }
   }
   pair_chunks[[i]] <- pairs
+  excluded_chunks[[i]] <- shard_excluded
   shard_rows[[i]] <- data.frame(
     shard_file = basename(file), n_pairs = nrow(pairs),
+    n_excluded = nrow(shard_excluded),
     exposure_index_min = min(pairs$exposure_index),
     exposure_index_max = max(pairs$exposure_index),
     response_rank_min = min(pairs$response_rank),
     response_rank_max = max(pairs$response_rank),
     stringsAsFactors = FALSE
   )
-  rm(shard, pairs, declared)
+  rm(shard, pairs, declared, shard_excluded)
   if (i %% 25L == 0L || i == length(candidate)) {
     cat("  validated ", i, "/", length(candidate), " shards\n", sep = "")
   }
@@ -384,19 +419,32 @@ locked_expression_audit <- utils::read.csv(
   stringsAsFactors = FALSE
 )
 if (nrow(locked_expression_audit) != 1L ||
-    locked_expression_audit$schema_version != 2L ||
-    !identical(locked_expression_audit$h5ad_path,
-               baseline$h5ad_file) ||
-    !identical(as.numeric(locked_expression_audit$h5ad_size_bytes),
-               as.numeric(baseline$h5ad_size_bytes)) ||
-    !identical(locked_expression_audit$h5ad_mtime_utc,
-               baseline$h5ad_mtime_utc) ||
-    !identical(locked_expression_audit$h5ad_md5,
-               baseline$h5ad_md5)) {
-  stop("Locked expression audit and shard H5AD identity disagree")
+    locked_expression_audit$schema_version != 3L ||
+    !identical(locked_expression_audit$backend,
+               baseline$counts_backend) ||
+    !identical(locked_expression_audit$counts_source_path,
+               baseline$counts_source_file) ||
+    !identical(as.numeric(locked_expression_audit$counts_source_size_bytes),
+               as.numeric(baseline$counts_source_size_bytes)) ||
+    !identical(locked_expression_audit$counts_source_mtime_utc,
+               baseline$counts_source_mtime_utc) ||
+    !identical(locked_expression_audit$counts_source_md5,
+               baseline$counts_source_md5)) {
+  stop("Locked expression audit and shard counts-source identity disagree")
 }
 
 pair_results <- do.call(rbind, pair_chunks)
+excluded_pairs <- do.call(rbind, excluded_chunks)
+if (is.null(excluded_pairs)) {
+  excluded_pairs <- data.frame(
+    pair_id = character(), pilot_pair_index = integer(),
+    exposure_index = integer(), exposure_gene = character(),
+    response_gene = character(), response_rank = integer(),
+    status = character(), error_message = character(),
+    stringsAsFactors = FALSE
+  )
+}
+rownames(excluded_pairs) <- NULL
 shard_inventory <- do.call(rbind, shard_rows)
 rownames(pair_results) <- NULL
 if (anyDuplicated(pair_results$pair_id)) {
@@ -424,17 +472,19 @@ if (mode == "pilot") {
   ), ]
   pilot_ids <- paste(pilot$exposure_gene, pilot$response_gene, sep = "::")
   exposure_balance <- table(pilot$exposure_index)
-  if (nrow(pair_results) != 5000L || nrow(pilot) != 5000L ||
+  covered_ids <- c(pair_results$pair_id, excluded_pairs$pair_id)
+  covered_pilot_index <- c(as.integer(pair_results$pilot_pair_index),
+                           as.integer(excluded_pairs$pilot_pair_index))
+  if (length(covered_ids) != 5000L || nrow(pilot) != 5000L ||
       anyDuplicated(pilot$pilot_pair_index) ||
       !identical(sort(as.integer(pilot$pilot_pair_index)), seq_len(5000L)) ||
       anyDuplicated(pilot$response_rank) ||
       !identical(sort(as.integer(pilot$response_rank)), seq_len(5000L)) ||
       length(exposure_balance) != 241L || min(exposure_balance) != 20L ||
       max(exposure_balance) != 21L ||
-      !setequal(pair_results$pair_id, pilot_ids) ||
-      anyNA(pair_results$pilot_pair_index) ||
-      !identical(sort(as.integer(pair_results$pilot_pair_index)),
-                 seq_len(5000L))) {
+      !setequal(covered_ids, pilot_ids) ||
+      anyNA(covered_pilot_index) ||
+      !identical(sort(covered_pilot_index), seq_len(5000L))) {
     stop("Frozen-pilot coverage/balance is incomplete; refusing to combine")
   }
   pair_results <- pair_results[order(pair_results$pilot_pair_index), ]
@@ -449,9 +499,12 @@ if (mode == "pilot") {
   }
 } else {
   expected_n <- expected_exposures * 5000L
-  exposure_counts <- table(pair_results$exposure_index)
-  response_counts <- table(pair_results$response_rank)
-  if (nrow(pair_results) != expected_n ||
+  grid_index <- c(as.integer(pair_results$exposure_index),
+                  as.integer(excluded_pairs$exposure_index))
+  exposure_counts <- table(grid_index)
+  response_counts <- table(c(as.integer(pair_results$response_rank),
+                             as.integer(excluded_pairs$response_rank)))
+  if (nrow(pair_results) + nrow(excluded_pairs) != expected_n ||
       length(exposure_counts) != expected_exposures ||
       any(exposure_counts != 5000L) ||
       !identical(sort(as.integer(names(exposure_counts))),
@@ -540,7 +593,16 @@ combined <- list(
   config = list(
     analysis = "frangieh_exploratory_trans_strict_combination",
     mode = mode, min_treated = min_treated, permutations = B, seed = seed,
+    counts_backend = baseline$counts_backend,
     n_tests = nrow(pair_results), n_shards = length(candidate),
+    n_declared_pairs = nrow(pair_results) + nrow(excluded_pairs),
+    n_excluded_degenerate_nuisance_fit = nrow(excluded_pairs),
+    exclusion_rule = paste(
+      "pairs whose negative-binomial nuisance fit on (Y, Z_design)",
+      "degenerates are excluded; that fit is held fixed across the",
+      "permutation orbit, so the criterion is invariant to every",
+      "guide-label permutation and cannot depend on the exposure"
+    ),
     p_value_resolution = min_raw_p,
     multiplicity_correction = "not_computed",
     multiplicity_note = resolution_note
@@ -550,6 +612,7 @@ combined <- list(
   response_manifest = baseline$response_manifest,
   pilot_manifest = baseline$pilot_manifest,
   shard_inventory = shard_inventory,
+  excluded_pairs = excluded_pairs,
   shard_files = basename(candidate),
   shard_md5 = unname(tools::md5sum(candidate)),
   pair_results = pair_results,
@@ -562,11 +625,12 @@ combined <- list(
     combiner_script_md5 = unname(tools::md5sum(script_path)),
     runner_script_md5 = baseline$runner_script_md5,
     score_helper_md5 = baseline$score_helper_md5,
-    h5ad_file = baseline$h5ad_file,
-    h5ad_size_bytes = baseline$h5ad_size_bytes,
-    h5ad_mtime_utc = baseline$h5ad_mtime_utc,
-    h5ad_md5 = baseline$h5ad_md5,
-    h5ad_identity_verification = baseline$h5ad_identity_verification,
+    counts_backend = baseline$counts_backend,
+    counts_source_file = baseline$counts_source_file,
+    counts_source_size_bytes = baseline$counts_source_size_bytes,
+    counts_source_mtime_utc = baseline$counts_source_mtime_utc,
+    counts_source_md5 = baseline$counts_source_md5,
+    counts_identity_verification = baseline$counts_identity_verification,
     input_md5 = baseline$input_md5,
     package_versions = baseline$package_versions,
     session_info = utils::sessionInfo()
@@ -592,7 +656,15 @@ atomic_publish(tmp_summary, summary_path, overwrite)
 atomic_publish(tmp_plot, plot_path, overwrite)
 
 cat("Coverage and provenance audit passed.\n")
+cat("  declared pairs: ", nrow(pair_results) + nrow(excluded_pairs), "\n",
+    sep = "")
 cat("  combined tests: ", nrow(pair_results), "\n", sep = "")
+cat("  excluded (degenerate nuisance fit): ", nrow(excluded_pairs), "\n",
+    sep = "")
+if (nrow(excluded_pairs)) {
+  print(excluded_pairs[, c("pair_id", "response_rank", "error_message")],
+        row.names = FALSE)
+}
 cat("  RDS: ", rds_path, "\n", sep = "")
 cat("  CSV: ", csv_path, "\n", sep = "")
 cat("  summary: ", summary_path, "\n", sep = "")
