@@ -184,6 +184,7 @@ precompute_score_cache <- function(Y, Z_design) {
   list(
     Z_design = Z_design,
     theta_hat = nb_null$theta_hat,
+    dispersion_method = nb_null$dispersion_method,
     r_hat = r_hat,
     w_hat = w_hat,
     ZWZ_inv = ZWZ_inv,
