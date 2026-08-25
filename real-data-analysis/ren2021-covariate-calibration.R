@@ -33,6 +33,10 @@ script_dir <- if (!is.na(script_path)) dirname(normalizePath(script_path)) else 
 project_root <- normalizePath(file.path(script_dir, "..", ".."))
 detected_cores <- parallel::detectCores(logical = FALSE)
 if (is.na(detected_cores)) detected_cores <- 1L
+output_dir <- parse_arg(
+  "out-dir",
+  file.path(project_root, "data", "ren2021")
+)
 
 cfg <- list(
   ren_data = parse_arg("ren-data", "/tmp/DCATS/data/Ren2021.rda"),
@@ -44,10 +48,10 @@ cfg <- list(
   )),
   validate_aod = as_flag(parse_arg("validate-aod", "true")),
   aod_lib = parse_arg("aod-lib", "/private/tmp/aod-lib"),
-  out_dir = parse_arg("out-dir", file.path(project_root, "data", "ren2021")),
+  out_dir = output_dir,
   figure_dir = parse_arg(
     "figure-dir",
-    file.path(project_root, "project-progress", "combine", "figures-and-tables")
+    file.path(output_dir, "figures")
   ),
   tolerance = as.numeric(parse_arg("tolerance", "1e-8"))
 )

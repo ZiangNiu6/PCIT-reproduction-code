@@ -29,6 +29,10 @@ plots_dir <- Sys.getenv(
   unset = file.path(results_root, "frangieh-2021", "plots")
 )
 dir.create(plots_dir, showWarnings = FALSE, recursive = TRUE)
+manuscript_directory <- file.path(
+  project_root, "manuscript", "figures-and-tables"
+)
+dir.create(manuscript_directory, showWarnings = FALSE, recursive = TRUE)
 
 aggregated_file <- file.path(results_dir, "score_fdr_aggregated.rds")
 pair_file <- file.path(results_dir, "score_pair_long.rds")
@@ -237,8 +241,7 @@ ggsave(
 )
 
 manuscript_summary <- file.path(
-  project_root,
-  "project-progress", "combine", "figures-and-tables",
+  manuscript_directory,
   "frangieh-score5-fdr-power.pdf"
 )
 if (!file.copy(summary_output, manuscript_summary, overwrite = TRUE)) {
@@ -291,8 +294,7 @@ ggsave(
 )
 
 manuscript_pvalues <- file.path(
-  project_root,
-  "project-progress", "combine", "figures-and-tables",
+  manuscript_directory,
   "frangieh-score5-pvalue-histograms.pdf"
 )
 if (!file.copy(pvalue_output, manuscript_pvalues, overwrite = TRUE)) {

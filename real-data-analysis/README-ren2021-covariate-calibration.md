@@ -94,5 +94,6 @@ sensitivity analysis.
 - `data/ren2021/ren2021-covariate-calibration.rds`: allocation matrices,
   fitted null objects, statistics, p-value matrices, diagnostics, and session
   metadata.
-- `project-progress/combine/figures-and-tables/ren2021-covariate-calibration.*`:
-  calibration plot.
+- `data/ren2021/figures/ren2021-covariate-calibration.*`: calibration plot.
+
+Use `--figure-dir=/absolute/path` to override this diagnostic-output directory.

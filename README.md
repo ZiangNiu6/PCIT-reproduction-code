@@ -1,7 +1,7 @@
 # Reproduction code
 
 This directory contains the analysis and plotting code for the numerical
-results in `project-progress/combine/combine.tex`.  The organization follows a
+results in `manuscript/combine.tex`.  The organization follows a
 shallow manuscript-reproduction layout: one directory per analysis domain,
 plotting code beside that domain, and three entry points at the repository
 root.
@@ -30,8 +30,9 @@ results.  To regenerate figures from existing or downloaded result files, use
 
 All runners activate the repository-level `renv` environment.  Numerical
 results are stored outside the source tree under `LOCAL_PDRT_DATA_DIR` (or the
-documented local fallback), while final PDFs are written to
-`project-progress/combine/figures-and-tables`.
+documented local fallback), while the ten manuscript-facing PDFs are written
+to `manuscript/figures-and-tables`. Additional diagnostic plots remain beside
+their analysis results rather than being copied into the manuscript bundle.
 
 ## Contents
 
@@ -42,9 +43,10 @@ documented local fallback), while final PDFs are written to
 - `real-data-analysis/`: the Frangieh Perturb-seq FDR and power analysis.
 - `plotting-style.R`: the shared visual encoding used by the GCM/PCM and CCLE
   figures.
-- `check_outputs.R`: verifies the 11 baseline manuscript PDFs and, when v4
-  CCLE composites are present, requires the complete three-file v4 figure set;
-  every checked PDF must exist and be nonempty.
+- `check_outputs.R`: verifies the eight baseline/fallback manuscript PDFs and,
+  when v4 CCLE composites are present, requires both current composite figures;
+  every checked PDF must exist and be nonempty, and unreferenced image files
+  are rejected from the manuscript figure directory.
 
 Exploratory analyses not used by the active manuscript are intentionally
 excluded.

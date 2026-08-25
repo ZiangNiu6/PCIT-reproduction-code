@@ -54,12 +54,11 @@ project_root <- normalizePath(
 )
 output_dir <- file.path(
   project_root,
-  "project-progress",
-  "combine",
+  "manuscript",
   "figures-and-tables"
 )
 if (!identical(
-      normalizePath(dirname(dirname(dirname(output_dir))), mustWork = FALSE),
+      normalizePath(dirname(dirname(output_dir)), mustWork = FALSE),
       project_root
     )) {
   stop("CCLE output directory is not rooted directly under project_root.",
@@ -78,6 +77,7 @@ if (!dir.exists(data_root)) {
   stop("LOCAL_PDRT_DATA_DIR does not exist: ", data_root, call. = FALSE)
 }
 data_root <- normalizePath(data_root, mustWork = TRUE)
+diagnostic_dir <- file.path(data_root, "ccle", "plots")
 
 style_path <- file.path(project_root, "reproduction-code", "plotting-style.R")
 if (!file.exists(style_path)) {
@@ -1165,6 +1165,7 @@ if (validate_only) {
 }
 
 dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
+dir.create(diagnostic_dir, recursive = TRUE, showWarnings = FALSE)
 
 # Focus the CCLE figures on the rare-carrier GCM mechanism. PCM remains in the
 # validated result schema and reproduction archive, but is not displayed here
@@ -1677,7 +1678,7 @@ p_qq <- ggplot(
   )
 
 qq_path <- file.path(
-  output_dir,
+  diagnostic_dir,
   "ccle-typeI-synthY-30targets-pvalqq.pdf"
 )
 ggsave(qq_path, p_qq, width = 12, height = 7.5)
@@ -2009,7 +2010,7 @@ if (identical(input_schema, SCHEMA_V4)) {
     )
 
   alternative_path <- file.path(
-    output_dir,
+    diagnostic_dir,
     "ccle-alternative-synthY-30targets-rejection.pdf"
   )
   ggsave(alternative_path, p_alternative, width = 12.5, height = 5.0)
@@ -2116,7 +2117,7 @@ if (identical(input_schema, SCHEMA_V4)) {
     )
 
   alternative_path <- file.path(
-    output_dir,
+    diagnostic_dir,
     "ccle-alternative-synthY-30targets-rejection.pdf"
   )
   ggsave(alternative_path, p_alternative, width = 12, height = 4.8)

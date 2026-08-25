@@ -178,17 +178,5 @@ ggsave(
   dpi = 300,
   bg = "white"
 )
-manuscript_file <- file.path(
-  project_root,
-  "project-progress",
-  "combine",
-  "figures-and-tables",
-  "regularization-robustness-grid.pdf"
-)
-dir.create(dirname(manuscript_file), recursive = TRUE, showWarnings = FALSE)
-if (!file.copy(pdf_file, manuscript_file, overwrite = TRUE)) {
-  stop("Could not copy manuscript figure to ", manuscript_file)
-}
 message("Saved ", normalizePath(pdf_file))
 message("Saved ", normalizePath(png_file))
-message("Copied ", normalizePath(manuscript_file))

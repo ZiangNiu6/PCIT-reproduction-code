@@ -47,8 +47,7 @@ script_directory <- dirname(script_file)
 project_root <- normalizePath(file.path(script_directory, "..", "..", ".."))
 manuscript_directory <- file.path(
   project_root,
-  "project-progress",
-  "combine",
+  "manuscript",
   "figures-and-tables"
 )
 
@@ -317,7 +316,8 @@ add_grid_plot_labels <- function(data) {
 }
 
 save_plot_pair <- function(
-    plot, stem, width, height, output_directory = results_directory) {
+    plot, stem, width, height, output_directory = results_directory,
+    save_png = TRUE) {
   dir.create(output_directory, recursive = TRUE, showWarnings = FALSE)
   pdf_file <- file.path(output_directory, paste0(sim_name, "-", stem, ".pdf"))
   png_file <- file.path(output_directory, paste0(sim_name, "-", stem, ".png"))
@@ -337,13 +337,15 @@ save_plot_pair <- function(
     width = width, height = height, units = "in",
     device = pdf_device, limitsize = FALSE
   )
-  ggsave(
-    png_file, plot,
-    width = width, height = height, units = "in",
-    dpi = 300, bg = "white", limitsize = FALSE
-  )
+  if (save_png) {
+    ggsave(
+      png_file, plot,
+      width = width, height = height, units = "in",
+      dpi = 300, bg = "white", limitsize = FALSE
+    )
+  }
   message("Saved ", normalizePath(pdf_file))
-  message("Saved ", normalizePath(png_file))
+  if (save_png) message("Saved ", normalizePath(png_file))
 }
 
 write_summary <- function(data, stem) {
@@ -1726,7 +1728,8 @@ if (nrow(focused_typeI) > 0L &&
       paste0(tolower(design_value), "-focused-3x3"),
       width = 10.5,
       height = 10.3,
-      output_directory = manuscript_directory
+      output_directory = manuscript_directory,
+      save_png = FALSE
     )
   }
 }

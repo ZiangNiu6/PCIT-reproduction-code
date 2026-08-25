@@ -35,19 +35,20 @@ script_dir <- if (!is.na(script_path)) {
 project_root <- normalizePath(file.path(script_dir, "..", ".."))
 detected_cores <- parallel::detectCores(logical = FALSE)
 if (is.na(detected_cores)) detected_cores <- 1L
+output_dir <- parse_arg(
+  "out-dir",
+  file.path(project_root, "data", "angelidis")
+)
 
 cfg <- list(
   metadata = parse_arg(
     "metadata",
     "/tmp/GSE124872_Angelidis_2018_metadata.csv.gz"
   ),
-  out_dir = parse_arg(
-    "out-dir",
-    file.path(project_root, "data", "angelidis")
-  ),
+  out_dir = output_dir,
   figure_dir = parse_arg(
     "figure-dir",
-    file.path(project_root, "project-progress", "combine", "figures-and-tables")
+    file.path(output_dir, "figures")
   ),
   include_33_sensitivity = as_flag(parse_arg("include-33-sensitivity", "true")),
   validate_aod = as_flag(parse_arg("validate-aod", "true")),

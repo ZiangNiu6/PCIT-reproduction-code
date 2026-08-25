@@ -5,7 +5,7 @@ if (length(script_arg) != 1L) stop("Could not determine this script's path")
 script_dir <- normalizePath(dirname(sub("^--file=", "", script_arg)))
 project_root <- normalizePath(file.path(script_dir, ".."))
 figure_dir <- file.path(
-  project_root, "project-progress", "combine", "figures-and-tables"
+  project_root, "manuscript", "figures-and-tables"
 )
 
 expected_figures <- c(
@@ -16,10 +16,7 @@ expected_figures <- c(
   "ccle-typeI-synthY-30targets-typeI-combined.pdf",
   "frangieh-score5-fdr-power.pdf",
   "nb-permutation-signflip-mi-focused-3x3.pdf",
-  "cv-locked-tuning-simulation.pdf",
-  "ccle-typeI-synthY-30targets-pvalqq.pdf",
-  "frangieh-score5-pvalue-histograms.pdf",
-  "regularization-robustness-grid.pdf"
+  "frangieh-score5-pvalue-histograms.pdf"
 )
 
 v4_composites <- c(
@@ -38,8 +35,7 @@ if (any(file.exists(v4_composite_paths))) {
   }
   expected_figures <- c(
     expected_figures,
-    v4_composites,
-    "ccle-alternative-synthY-30targets-rejection.pdf"
+    v4_composites
   )
 }
 
@@ -49,6 +45,21 @@ if (length(missing) > 0L) {
   stop(
     "Missing manuscript figure(s):\n  ",
     paste(missing, collapse = "\n  "),
+    call. = FALSE
+  )
+}
+
+present_figures <- list.files(
+  figure_dir,
+  pattern = "[.](pdf|png|jpe?g|eps|svg)$",
+  ignore.case = TRUE
+)
+unexpected <- setdiff(present_figures, expected_figures)
+if (length(unexpected) > 0L) {
+  stop(
+    "Unexpected manuscript figure(s):\n  ",
+    paste(unexpected, collapse = "\n  "),
+    "\nKeep diagnostics with their analysis results instead.",
     call. = FALSE
   )
 }

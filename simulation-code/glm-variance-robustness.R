@@ -1,6 +1,6 @@
 #!/usr/bin/env Rscript
 
-# Illustrative working-Poisson score example for project-progress/combine/combine.tex.
+# Illustrative working-Poisson score example for manuscript/combine.tex.
 #
 # DGPs (with the manuscript's omitted marginal law made explicit):
 #   Z ~ N(0, 1),

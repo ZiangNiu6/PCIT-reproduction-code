@@ -630,14 +630,6 @@ figure <- wrap_plots(
 
 pdf_file <- file.path(data_directory, "cv-locked-tuning-simulation.pdf")
 png_file <- file.path(data_directory, "cv-locked-tuning-simulation.png")
-standalone_file <- file.path(
-  project_root,
-  "project-progress",
-  "combine",
-  "figures-and-tables",
-  "cv-locked-tuning-simulation.pdf"
-)
-dir.create(dirname(standalone_file), recursive = TRUE, showWarnings = FALSE)
 
 ggsave(
   pdf_file,
@@ -647,12 +639,8 @@ ggsave(
   useDingbats = FALSE
 )
 ggsave(png_file, figure, width = 12, height = 6.6, dpi = 220)
-if (!file.copy(pdf_file, standalone_file, overwrite = TRUE)) {
-  stop("Could not copy manuscript figure to ", standalone_file)
-}
 
 message("Saved: ", normalizePath(pdf_file))
 message("Saved: ", normalizePath(png_file))
 message("Saved: ", normalizePath(summary_file))
 message("Saved: ", normalizePath(fixed_path_summary_file))
-message("Copied: ", normalizePath(standalone_file, mustWork = FALSE))

@@ -75,10 +75,12 @@ likelihood ratios is checked against the implementation used by DCATS.
 - `data/angelidis/angelidis-celltype-permutation-calibration.rds`: complete
   assignment-level statistics, p-value matrices, diagnostics, corrected age
   metadata, input hash, and session information.
-- `project-progress/combine/figures-and-tables/angelidis-celltype-calibration.pdf`
-  and `.png`: paper-30 per-type comparison.
-- `project-progress/combine/figures-and-tables/angelidis-observed-discoveries.pdf`
-  and `.png`: signed observed BH evidence for the four methods.
+- `data/angelidis/figures/angelidis-celltype-calibration.pdf` and `.png`:
+  paper-30 per-type comparison.
+- `data/angelidis/figures/angelidis-observed-discoveries.pdf` and `.png`:
+  signed observed BH evidence for the four methods.
+
+Use `--figure-dir=/absolute/path` to override this diagnostic-output directory.
 
 ## Interpretation
 

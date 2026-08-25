@@ -56,8 +56,7 @@ validate_only <- "--validate-only" %in% cli_arguments
 
 manuscript_directory <- file.path(
   project_root,
-  "project-progress",
-  "combine",
+  "manuscript",
   "figures-and-tables"
 )
 

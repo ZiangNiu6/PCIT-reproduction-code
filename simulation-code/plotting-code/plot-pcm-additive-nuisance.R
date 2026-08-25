@@ -43,11 +43,14 @@ project_root <- normalizePath(file.path(script_directory, "..", "..", ".."))
 source(file.path(project_root, "reproduction-code", "plotting-style.R"))
 validate_only <- "--validate-only" %in% commandArgs(trailingOnly = TRUE)
 
-manuscript_directory <- file.path(project_root, "project-progress", "combine",
-                                  "figures-and-tables")
 results_root <- Sys.getenv("LOCAL_PDRT_DATA_DIR", unset = "")
-if (!nzchar(results_root)) results_root <- file.path(project_root, "results")
+if (!nzchar(results_root)) {
+  results_root <- file.path(project_root, "results")
+} else if (!grepl("^/", results_root)) {
+  results_root <- file.path(project_root, results_root)
+}
 sim_dir <- file.path(results_root, "simulation-results")
+diagnostic_directory <- file.path(sim_dir, "pcm-additive-matched")
 
 ALPHA <- 0.05
 
@@ -184,7 +187,7 @@ joint <- patchwork::wrap_plots(
   widths = c(0.16, 1), heights = c(0.10, 1, 1, 1.30, 0.14)
 )
 
-dir.create(manuscript_directory, recursive = TRUE, showWarnings = FALSE)
-out <- file.path(manuscript_directory, "pcm_additive_nuisance.pdf")
+dir.create(diagnostic_directory, recursive = TRUE, showWarnings = FALSE)
+out <- file.path(diagnostic_directory, "pcm_additive_nuisance.pdf")
 ggsave(out, joint, height = 8.4, width = 5.9, device = cairo_pdf)
 cat("Plot saved to ", out, "\n", sep = "")

@@ -39,8 +39,7 @@ output_directory <- file.path(
 )
 manuscript_directory <- file.path(
   project_root,
-  "project-progress",
-  "combine",
+  "manuscript",
   "figures-and-tables"
 )
 dir.create(manuscript_directory, recursive = TRUE, showWarnings = FALSE)
