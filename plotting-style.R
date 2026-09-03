@@ -5,27 +5,33 @@
 ## as a calibration method.  Both encodings use the semantic variables created
 ## by add_calibration_test_aesthetics().
 
-CALIBRATION_LEVELS <- c("Permutation", "Asymptotic", "Not applicable")
+CALIBRATION_LEVELS <- c(
+  "Permutation", "Asymptotic", "Conditional resampling", "Not applicable"
+)
 CALIBRATION_COLORS <- c(
   "Permutation" = "#E41A1C",
   "Asymptotic" = "#377EB8",
+  "Conditional resampling" = "#984EA3",
   "Not applicable" = "#999999"
 )
 CALIBRATION_LINETYPES <- c(
   "Permutation" = "solid",
   "Asymptotic" = "dashed",
+  "Conditional resampling" = "dotdash",
   "Not applicable" = "solid"
 )
 
-TEST_LEVELS <- c("GCM", "PCM", "Pearson")
+TEST_LEVELS <- c("GCM", "PCM", "dCRT", "Pearson")
 TEST_COLORS <- c(
   "GCM" = "#E41A1C",
   "PCM" = "#377EB8",
+  "dCRT" = "#984EA3",
   "Pearson" = "#999999"
 )
 TEST_LINETYPES <- c(
   "GCM" = "solid",
   "PCM" = "dashed",
+  "dCRT" = "dotdash",
   "Pearson" = "solid"
 )
 
@@ -34,12 +40,14 @@ add_calibration_test_aesthetics <- function(data, method_column = "method") {
   calibration <- dplyr::case_when(
     grepl("^perm_", method_code) ~ "Permutation",
     grepl("^asym_", method_code) ~ "Asymptotic",
+    method_code == "dcrt_rf" ~ "Conditional resampling",
     method_code %in% c("naive", "pearson") ~ "Not applicable",
     TRUE ~ NA_character_
   )
   test <- dplyr::case_when(
     grepl("_gcm(_|$)", method_code) ~ "GCM",
     grepl("_pcm(_|$)", method_code) ~ "PCM",
+    method_code == "dcrt_rf" ~ "dCRT",
     method_code %in% c("naive", "pearson") ~ "Pearson",
     TRUE ~ NA_character_
   )
@@ -60,12 +68,13 @@ add_calibration_test_aesthetics <- function(data, method_column = "method") {
 
 scale_calibration_colour <- function(include_pearson = FALSE,
                                      guide = "legend",
-                                     name = "Calibration") {
-  breaks <- if (include_pearson) {
-    CALIBRATION_LEVELS
-  } else {
-    CALIBRATION_LEVELS[1:2]
-  }
+                                     name = "Calibration",
+                                     include_conditional = FALSE) {
+  breaks <- c(
+    "Permutation", "Asymptotic",
+    if (include_conditional) "Conditional resampling",
+    if (include_pearson) "Not applicable"
+  )
   ggplot2::scale_colour_manual(
     name = name,
     values = CALIBRATION_COLORS,
@@ -74,12 +83,13 @@ scale_calibration_colour <- function(include_pearson = FALSE,
   )
 }
 
-scale_calibration_fill <- function(include_pearson = FALSE, guide = "legend") {
-  breaks <- if (include_pearson) {
-    CALIBRATION_LEVELS
-  } else {
-    CALIBRATION_LEVELS[1:2]
-  }
+scale_calibration_fill <- function(include_pearson = FALSE, guide = "legend",
+                                   include_conditional = FALSE) {
+  breaks <- c(
+    "Permutation", "Asymptotic",
+    if (include_conditional) "Conditional resampling",
+    if (include_pearson) "Not applicable"
+  )
   ggplot2::scale_fill_manual(
     name = "Calibration",
     values = CALIBRATION_COLORS,
@@ -88,11 +98,12 @@ scale_calibration_fill <- function(include_pearson = FALSE, guide = "legend") {
   )
 }
 
-scale_test_linetype <- function(guide = "legend") {
+scale_test_linetype <- function(guide = "legend", include_dcrt = FALSE) {
+  breaks <- c("GCM", "PCM", if (include_dcrt) "dCRT")
   ggplot2::scale_linetype_manual(
     name = "Test",
     values = TEST_LINETYPES,
-    breaks = TEST_LEVELS[1:2],
+    breaks = breaks,
     guide = guide
   )
 }

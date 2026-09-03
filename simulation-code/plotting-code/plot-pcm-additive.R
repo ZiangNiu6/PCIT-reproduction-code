@@ -14,12 +14,13 @@
 #   Resizing: for each (method, dgp), the empirical alpha-quantile of p-values
 #   at gamma=0 is used as the rejection cutoff for all gamma values.
 #
-#   colour/fill = procedure (Permutation, Asymptotic)
-#   line/border type = test (GCM solid, PCM dashed)
+#   colour/fill = calibration (Permutation, Asymptotic,
+#                              Conditional resampling)
+#   line/border type = test (GCM solid, PCM dashed, dCRT dot-dashed)
 #
-# The shared result also contains a separately registered dCRT method.  Its
-# complete schema is validated here, but the established four-curve manuscript
-# figure remains a matched GCM/PCM calibration comparison.
+# The fifth displayed procedure is learned-law dCRT. Its random-forest
+# nuisance fits match GCM, while its conditional-resampling reference uses the
+# fitted homoskedastic Gaussian working law for X given Z.
 #
 # The panel layout and typography follow manuscript Figure 3: a header row,
 # three scenario rows, panel tags a--i, left-side row labels, and one shared
@@ -213,9 +214,9 @@ if (length(complete_run_ids) != expected_groups ||
   )
 }
 
-# The existing manuscript figure displays the matched GCM/PCM comparison.  The
-# new dCRT rows are validated below but remain a separate outer method so they
-# cannot alter the matched-statistic output contract accidentally.
+# GCM and PCM share one matched outer method. dCRT remains a separate outer
+# method so it cannot alter that matched-statistic output contract accidentally;
+# the two sources are combined only after their schemas have been validated.
 results_table <- all_results_table[
   all_results_table$method == combined_method,
   ,
@@ -696,6 +697,24 @@ if (nrow(dcrt_pvals_df) != expected_rows ||
   stop("Expansion of the dCRT p-values failed its integrity check.")
 }
 
+plot_pvals_df <- dplyr::bind_rows(pvals_df, dcrt_pvals_df)
+expected_plot_methods <- c(display_methods, dcrt_method)
+expected_plot_pvalues <- expected_rows * length(expected_plot_methods)
+plot_pvalue_keys <- paste(
+  plot_pvals_df$grid_id,
+  plot_pvals_df$run_id,
+  plot_pvals_df$method,
+  sep = ":"
+)
+if (nrow(plot_pvals_df) != expected_plot_pvalues ||
+    !setequal(unique(plot_pvals_df$method), expected_plot_methods) ||
+    anyDuplicated(plot_pvalue_keys) ||
+    anyNA(plot_pvals_df$p.value) ||
+    any(!is.finite(plot_pvals_df$p.value)) ||
+    any(plot_pvals_df$p.value < 0 | plot_pvals_df$p.value > 1)) {
+  stop("The combined five-method plotting data failed its integrity check.")
+}
+
 alpha <- 0.05
 
 add_wilson_bounds <- function(data, confidence = 0.95) {
@@ -734,14 +753,15 @@ dcrt_summary_df <- dcrt_pvals_df |>
   dplyr::mutate(
     mean_learner = "random_forest",
     model_x_law = "homoskedastic_gaussian"
-  )
+  ) |>
+  add_calibration_test_aesthetics()
 
 if (validate_only) {
   cat(
     "Validated pcm-additive result: ", expected_rows,
     " matched and ", length(dcrt_p_values),
-    " dCRT grid/run outputs, plus ", nrow(pvals_df),
-    " finite displayed GCM/PCM p-values and ", nrow(dcrt_summary_df),
+    " dCRT grid/run outputs, plus ", nrow(plot_pvals_df),
+    " finite displayed five-method p-values and ", nrow(dcrt_summary_df),
     " dCRT summary rows.\n",
     sep = ""
   )
@@ -759,7 +779,7 @@ if (summary_only) {
 }
 
 ########################## Compute standard rejection rates ####################
-summary_df <- pvals_df |>
+summary_df <- plot_pvals_df |>
   dplyr::mutate(reject = as.integer(p.value <= alpha)) |>
   dplyr::group_by(method, dgp, n, gamma_signal) |>
   dplyr::summarise(
@@ -768,13 +788,16 @@ summary_df <- pvals_df |>
     .groups = "drop"
   ) |>
   add_wilson_bounds()
+if (nrow(summary_df) != nrow(parameter_grid) * length(expected_plot_methods)) {
+  stop("Expected one raw rejection summary per grid cell and plotted method.")
+}
 
 ########################## Compute resized rejection rates #####################
 # For each (method, dgp), find empirical alpha-quantile from gamma=0 p-values
 # at the fixed n used in power analysis (n=600 for dep-Z, n=100 for xindep)
 
 # Step 1: get null p-values for each (method, dgp)
-null_pvals <- pvals_df |>
+null_pvals <- plot_pvals_df |>
   dplyr::filter(gamma_signal == 0) |>
   dplyr::select(method, dgp, n, p.value)
 
@@ -792,9 +815,15 @@ empirical_cutoffs <- null_pvals |>
     cutoff = quantile(p.value, probs = alpha, na.rm = TRUE),
     .groups = "drop"
   )
+if (nrow(empirical_cutoffs) !=
+    length(power_dgps) * length(expected_plot_methods) ||
+    anyNA(empirical_cutoffs$cutoff) ||
+    any(!is.finite(empirical_cutoffs$cutoff))) {
+  stop("Expected one finite empirical cutoff per DGP and plotted method.")
+}
 
 # Step 2: join cutoffs back to all p-values and compute resized rejection
-resized_df <- pvals_df |>
+resized_df <- plot_pvals_df |>
   dplyr::filter(dgp %in% power_dgps) |>
   dplyr::left_join(empirical_cutoffs, by = c("method", "dgp")) |>
   dplyr::mutate(reject_resized = as.integer(p.value <= cutoff)) |>
@@ -805,18 +834,22 @@ resized_df <- pvals_df |>
     .groups = "drop"
   ) |>
   add_wilson_bounds()
+if (nrow(resized_df) != nrow(parameter_grid) * length(expected_plot_methods)) {
+  stop("Expected one resized summary per grid cell and plotted method.")
+}
 
 ########################## Add calibration / test columns ######################
-# Keep the two calibrations adjacent within each test statistic so the
-# permutation-versus-asymptotic change is read as a direct pairwise comparison.
+# Keep the two GCM and PCM calibrations adjacent within each test statistic,
+# followed by the conditional-resampling dCRT benchmark.
 method_order <- c(
-  "perm_gcm_rf", "asym_gcm_rf", "perm_pcm_rf", "asym_pcm_rf"
+  "perm_gcm_rf", "asym_gcm_rf", "perm_pcm_rf", "asym_pcm_rf", "dcrt_rf"
 )
 method_display <- c(
   "perm_gcm_rf" = "Permutation GCM",
   "asym_gcm_rf" = "Asymptotic GCM",
   "perm_pcm_rf" = "Permutation PCM",
-  "asym_pcm_rf" = "Asymptotic PCM"
+  "asym_pcm_rf" = "Asymptotic PCM",
+  "dcrt_rf" = "Conditional resampling dCRT"
 )
 
 add_method_cols <- function(data) {
@@ -957,8 +990,8 @@ make_typeI_panel <- function(setting_value) {
       vjust = -0.45,
       size = 3
     ) +
-    scale_calibration_fill(guide = "none") +
-    scale_test_linetype(guide = "none") +
+    scale_calibration_fill(guide = "none", include_conditional = TRUE) +
+    scale_test_linetype(guide = "none", include_dcrt = TRUE) +
     scale_y_continuous(
       limits = c(0, typeI_upper),
       breaks = seq(0, typeI_upper, by = 0.05),
@@ -986,7 +1019,7 @@ make_rejection_panel <- function(
       y = .data$mean_reject,
       colour = .data$calibration,
       linetype = .data$test,
-      group = interaction(.data$calibration, .data$test)
+      group = .data$method
     )
   ) +
     geom_hline(
@@ -1004,7 +1037,8 @@ make_rejection_panel <- function(
     geom_line(linewidth = 0.7) +
     geom_point(size = 2.1) +
     scale_calibration_colour(
-      name = "Procedure",
+      name = "Calibration",
+      include_conditional = TRUE,
       guide = guide_legend(
         nrow = 1,
         order = 1,
@@ -1012,6 +1046,7 @@ make_rejection_panel <- function(
       )
     ) +
     scale_test_linetype(
+      include_dcrt = TRUE,
       guide = guide_legend(
         nrow = 1,
         order = 2,
@@ -1106,7 +1141,7 @@ joint_plot <- patchwork::wrap_plots(
     QQQQ
   ",
   widths = c(0.20, 1, 1, 1),
-  heights = c(0.14, 1, 1, 1, 0.18)
+  heights = c(0.14, 1, 1, 1, 0.21)
 )
 
 ########################## Save and synchronize ###############################

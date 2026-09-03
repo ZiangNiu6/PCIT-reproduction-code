@@ -108,10 +108,11 @@ Gaussian law is correctly shaped in the first two rows but intentionally
 misspecified in the heteroscedastic, shifted-exponential row. The
 full runner first executes
 `simulation-code/smoke-test-pcm-additive-matched.R`; the result validator then
-requires 27,000 complete outputs from each outer method. The current manuscript
-figure continues to display the four matched GCM/PCM procedures; dCRT remains
-available as a separately identifiable method in the same result object, and
-the plot workflow writes its cellwise rejection rates to
+requires 27,000 complete outputs from each outer method. The manuscript figure
+displays the four matched GCM/PCM procedures together with dCRT as a fifth
+curve. Its legends identify dCRT as the test and conditional resampling as its
+calibration. dCRT remains separately identifiable in the result object, and
+the plot workflow also writes its cellwise rejection rates to
 `pcm-additive-dcrt-rejection-summary.csv` beside that result. Pass
 `--summary-only` to `simulation-code/plotting-code/plot-pcm-additive.R` to
 validate both outer methods and write this table without regenerating the PDF.
