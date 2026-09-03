@@ -1,5 +1,5 @@
 ###############################################################################
-# Simulation specifier: three-row GCM/PCM continuous-regression comparison
+# Simulation specifier: three-row GCM/PCM/dCRT continuous-regression comparison
 #
 # DGPs (Z1 and ε are independent standard Gaussian; ξ is row-specific):
 #   setting1_xindep:
@@ -26,6 +26,17 @@
 # Thus, within each test, the normal and permutation procedures differ only in
 # calibration.  Random-forest seeds are fixed by nuisance-regression role, so
 # each observed/permuted refit uses the same learner randomness.
+#
+# The in-sample learned-law dCRT analyzed by Niu et al. is a separate simulatr
+# method.  It learns both nuisance means with the same random-forest
+# specification as GCM and uses the Gaussian working law
+#
+#   X | Z ~ N(mu_x_hat(Z), sigma_x_hat^2),
+#
+# where sigma_x_hat^2 is the mean squared in-sample X residual.  Its M=B_perm
+# conditional draws are not adaptive and mu_x_hat is not refit after drawing
+# X-tilde, as prescribed by the dCRT algorithm.  We use an absolute-statistic
+# two-sided p-value to match the two-sided GCM comparison in this study.
 ###############################################################################
 
 #####################
@@ -81,7 +92,20 @@ generate_data <- function(n, dgp, gamma_signal, B_perm) {
     stop("Unknown pcm-additive DGP: ", dgp)
   }
 
-  list(X = X, Y = Y, Z = Z, n = n, B_perm = B_perm)
+  # The conditional-randomization stream is independent across generated
+  # datasets.  Drawing its seed after X, Y, and Z ensures that it cannot alter
+  # the current dataset, while making dCRT reproducible when methods are run in
+  # a different order or in separate workers.
+  dcrt_resampling_seed <- sample.int(.Machine$integer.max - 1L, 1L)
+
+  list(
+    X = X,
+    Y = Y,
+    Z = Z,
+    n = n,
+    B_perm = B_perm,
+    dcrt_resampling_seed = as.integer(dcrt_resampling_seed)
+  )
 }
 
 generate_data_function <- simulatr::simulatr_function(
@@ -314,12 +338,209 @@ matched_gcm_pcm_rf_spec_f <- simulatr::simulatr_function(
   loop = TRUE
 )
 
+########################
+# 5. dCRT method function
+########################
+
+dcrt_rf_f <- function(data) {
+  schema_version <- "pcm_additive_dcrt_rf_v1"
+  alternative <- "two.sided"
+  rf_num_trees <- 500L
+  rf_num_threads <- 1L
+
+  # The nuisance seeds agree with the GCM roles above.  Consequently, dCRT and
+  # GCM use numerically identical nuisance fits on a given generated dataset,
+  # even though simulatr evaluates them as separate methods.  A distinct seed
+  # controls only the conditional model-X draws.
+  rf_args <- function(seed) {
+    list(
+      seed = as.integer(seed),
+      num.threads = rf_num_threads,
+      num.trees = rf_num_trees
+    )
+  }
+
+  local_seed <- function(seed, expr) {
+    R.utils::withSeed(expr, seed = as.integer(seed))
+  }
+
+  assert_probability <- function(x, label) {
+    if (length(x) != 1L || !is.finite(x) || x < 0 || x > 1) {
+      stop(label, " must be one finite number in [0, 1].", call. = FALSE)
+    }
+    invisible(TRUE)
+  }
+
+  n <- as.integer(data$n)
+  M <- as.integer(data$B_perm)
+  Z <- as.matrix(data$Z)
+  X <- as.numeric(data$X)
+  Y <- as.numeric(data$Y)
+  if (length(n) != 1L || is.na(n) || n < 4L ||
+      n != NROW(Z) || n != length(X) || n != length(Y) ||
+      any(!is.finite(Z)) || any(!is.finite(X)) || any(!is.finite(Y))) {
+    stop("The generated dCRT data are nonfinite or dimensionally inconsistent.",
+         call. = FALSE)
+  }
+  if (length(M) != 1L || is.na(M) || M < 1L) {
+    stop("B_perm must be one positive integer for dCRT.", call. = FALSE)
+  }
+  dcrt_resampling_seed <- as.integer(data$dcrt_resampling_seed)
+  if (length(dcrt_resampling_seed) != 1L ||
+      is.na(dcrt_resampling_seed) || dcrt_resampling_seed < 1L) {
+    stop("dcrt_resampling_seed must be one positive integer.", call. = FALSE)
+  }
+  seeds <- c(
+    nuisance_fit = 53112L,
+    YonZ = 53114L,
+    XonZ = 53115L,
+    model_x_resampling = dcrt_resampling_seed
+  )
+
+  # comets::gcm is used only as an exported two-regression interface.  dCRT
+  # below supplies its own raw statistic and model-X reference distribution.
+  nuisance_fit <- local_seed(
+    seeds[["nuisance_fit"]],
+    comets::gcm(
+      Y = Y,
+      X = X,
+      Z = Z,
+      alternative = "two.sided",
+      reg_YonZ = "rf",
+      reg_XonZ = "rf",
+      args_YonZ = rf_args(seeds[["YonZ"]]),
+      args_XonZ = rf_args(seeds[["XonZ"]]),
+      type = "scalar",
+      coin = FALSE,
+      return_fitted_models = FALSE
+    )
+  )
+  rY <- as.numeric(nuisance_fit$rY)
+  rX <- as.numeric(nuisance_fit$rX)
+  if (length(rY) != n || length(rX) != n ||
+      any(!is.finite(rY)) || any(!is.finite(rX))) {
+    stop("A dCRT nuisance fit returned invalid residuals.", call. = FALSE)
+  }
+  sigma2_x_hat <- mean(rX^2)
+  if (!is.finite(sigma2_x_hat) || sigma2_x_hat <= 0) {
+    stop("The Gaussian dCRT working law has nonpositive residual variance.",
+         call. = FALSE)
+  }
+  analytic_reference_sd <- sqrt(sigma2_x_hat * mean(rY^2))
+  if (!is.finite(analytic_reference_sd) || analytic_reference_sd <= 0) {
+    stop("The Gaussian dCRT reference distribution is degenerate.",
+         call. = FALSE)
+  }
+
+  residual_products <- rX * rY
+  statistic <- sum(residual_products) / sqrt(n)
+  product_mean <- mean(residual_products)
+  product_variance <- mean(residual_products^2) - product_mean^2
+  product_variance <- max(0, product_variance)
+  studentized_statistic <- if (product_variance > 0) {
+    statistic / sqrt(product_variance)
+  } else if (statistic == 0) {
+    0
+  } else {
+    sign(statistic) * Inf
+  }
+
+  reference_statistics <- local_seed(
+    seeds[["model_x_resampling"]],
+    {
+      # Constructing X-tilde itself is unnecessary: subtracting the frozen
+      # RF mean inside the dCRT statistic leaves exactly these innovations.
+      model_x_residuals <- matrix(
+        stats::rnorm(n * M, sd = sqrt(sigma2_x_hat)),
+        nrow = n,
+        ncol = M
+      )
+      colSums(model_x_residuals * rY) / sqrt(n)
+    }
+  )
+  if (length(reference_statistics) != M ||
+      any(!is.finite(reference_statistics)) || !is.finite(statistic)) {
+    stop("dCRT produced nonfinite observed or reference statistics.",
+         call. = FALSE)
+  }
+
+  n_exceed <- sum(abs(reference_statistics) >= abs(statistic))
+  p_value <- (1 + n_exceed) / (M + 1)
+  tail_p_values <- c(
+    less = (1 + sum(reference_statistics <= statistic)) / (M + 1),
+    greater = (1 + sum(reference_statistics >= statistic)) / (M + 1)
+  )
+  assert_probability(p_value, "dCRT p-value")
+  invisible(lapply(names(tail_p_values), function(name) {
+    assert_probability(tail_p_values[[name]], paste0("dCRT ", name, " p-value"))
+  }))
+
+  list(
+    schema_version = schema_version,
+    p.value = as.numeric(p_value),
+    p_values = c(dcrt_rf = as.numeric(p_value)),
+    statistic = as.numeric(statistic),
+    alternative = alternative,
+    tail_p_values = tail_p_values,
+    model_x = list(
+      family = "gaussian",
+      mean = "random_forest_prediction",
+      variance = "homoskedastic",
+      variance_estimator = "mean_squared_in_sample_residual",
+      sigma2_hat = as.numeric(sigma2_x_hat)
+    ),
+    nuisance = list(
+      residual_product_sd = sqrt(product_variance),
+      analytic_reference_sd = as.numeric(analytic_reference_sd),
+      studentized_statistic = as.numeric(studentized_statistic),
+      reference_standardized_statistic = as.numeric(
+        statistic / analytic_reference_sd
+      )
+    ),
+    monte_carlo = list(
+      M = M,
+      n_exceed = as.integer(n_exceed),
+      minimum_p_value = 1 / (M + 1),
+      reference_mean = mean(reference_statistics),
+      reference_sd = sqrt(mean(
+        (reference_statistics - mean(reference_statistics))^2
+      ))
+    ),
+    seeds = seeds,
+    configuration = list(
+      mean_learner = "random_forest",
+      fit_scope = "in_sample",
+      model_x_family = "gaussian",
+      model_x_variance = "homoskedastic",
+      variance_estimator = "mean_squared_in_sample_residual_divisor_n",
+      M = M,
+      refit_model_x_mean = FALSE,
+      two_sided_rule = "absolute_statistic_plus_one",
+      rf_num_trees = rf_num_trees,
+      rf_num_threads = rf_num_threads
+    ),
+    flags = c(
+      nuisance_fit_in_sample = TRUE,
+      model_x_mean_not_refit = TRUE,
+      fixed_model_x_draw_count = TRUE,
+      single_thread_rf = TRUE
+    )
+  )
+}
+
+dcrt_rf_spec_f <- simulatr::simulatr_function(
+  f = dcrt_rf_f,
+  arg_names = character(0),
+  loop = TRUE
+)
+
 run_method_functions <- list(
-  matched_gcm_pcm_rf = matched_gcm_pcm_rf_spec_f
+  matched_gcm_pcm_rf = matched_gcm_pcm_rf_spec_f,
+  dcrt_rf = dcrt_rf_spec_f
 )
 
 ############################
-# 5. Assemble specifier
+# 6. Assemble specifier
 ############################
 simulatr_spec <- simulatr::simulatr_specifier(
   parameter_grid,

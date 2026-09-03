@@ -92,12 +92,32 @@ signal magnitudes for this row are `0, 0.055, 0.11, 0.165, 0.22` under MI and
 `0, 0.0675, 0.135, 0.2025, 0.27` under CI.
 
 The Section 5.2 continuous-regression study writes to the isolated
-`simulation-results/pcm-additive-matched` namespace. Within each GCM or PCM
-pair, the normal and permutation p-values are computed from the same observed
-statistic, random-forest fits, and (for PCM) sample split. The full runner first
-executes `simulation-code/smoke-test-pcm-additive-matched.R`; the plotter then
-requires all 27,000 matched outputs before it can replace the manuscript
-figure. Legacy `pcm-additive` results are never accepted by this plotter.
+`simulation-results/pcm-additive-matched-dcrt` namespace. Its formal simulatr
+specifier registers two outer methods: `matched_gcm_pcm_rf` and `dcrt_rf`.
+Within each GCM or PCM pair, the normal and permutation p-values are computed
+from the same observed statistic, random-forest fits, and (for PCM) sample
+split. The `dcrt_rf` entry is specifically the in-sample learned-law dCRT
+analyzed by Niu et al., using a Gaussian working distribution with RF mean
+fits. It uses the same 500-tree nuisance regressions as GCM and the
+homoskedastic working law
+`X | Z ~ N(mu_X_hat(Z), sigma_X_hat^2)`, with 499 fixed conditional draws and
+an independently generated draw stream for each dataset. It reports the
+plus-one, absolute-statistic two-sided p-value; 499 matches the permutation cap
+used by the other methods and is a study-specific computational choice. The
+Gaussian law is correctly shaped in the first two rows but intentionally
+misspecified in the heteroscedastic, shifted-exponential row. The
+full runner first executes
+`simulation-code/smoke-test-pcm-additive-matched.R`; the result validator then
+requires 27,000 complete outputs from each outer method. The current manuscript
+figure continues to display the four matched GCM/PCM procedures; dCRT remains
+available as a separately identifiable method in the same result object, and
+the plot workflow writes its cellwise rejection rates to
+`pcm-additive-dcrt-rejection-summary.csv` beside that result. Pass
+`--summary-only` to `simulation-code/plotting-code/plot-pcm-additive.R` to
+validate both outer methods and write this table without regenerating the PDF.
+Legacy `pcm-additive` and pre-dCRT `pcm-additive-matched` results are never
+accepted by this plotter. The full runner budgets two hours per Section 5.2
+job by default; set `PCIT_PCM_SIM_MAX_HOURS` to override that request.
 
 The complete CCLE workflow runs locally by default. It first runs a small,
 data-independent matched-calibration smoke test, then resumes the 30 null and

@@ -50,12 +50,12 @@ if (!nzchar(results_root)) {
   results_root <- file.path(project_root, results_root)
 }
 sim_dir <- file.path(results_root, "simulation-results")
-diagnostic_directory <- file.path(sim_dir, "pcm-additive-matched")
+diagnostic_directory <- file.path(sim_dir, "pcm-additive-matched-dcrt")
 
 ALPHA <- 0.05
 
 ## ---- locate the three cells ------------------------------------------------
-read_cell <- function(file, schema, suffix, dgp, n, label) {
+read_cell <- function(file, run_method, schema, suffix, dgp, n, label) {
   path <- file.path(sim_dir, dirname(file), basename(file))
   if (!file.exists(path)) stop("Result not found: ", path)
   o <- readRDS(path)
@@ -72,7 +72,14 @@ read_cell <- function(file, schema, suffix, dgp, n, label) {
   }
   gid <- pg$grid_id[pg$dgp == dgp & pg$n == n & pg$gamma_signal == 0]
   if (length(gid) != 1L) stop("Cell not uniquely identified for ", label)
-  sub <- res[res$grid_id == gid, ]
+  sub <- res[
+    res$grid_id == gid & as.character(res$method) == run_method,
+    ,
+    drop = FALSE
+  ]
+  if (nrow(sub) == 0L) {
+    stop("No `", run_method, "` outputs found for ", label)
+  }
   stopifnot(all(vapply(sub$output, function(x)
     identical(x$schema_version, schema), logical(1L))))
   P <- do.call(rbind, lapply(sub$output, function(x) x$p_values))
@@ -93,11 +100,14 @@ ROWS <- c(
   "Spline, CI null (n = 200)"
 )
 pv <- dplyr::bind_rows(
-  read_cell("pcm-additive-matched/pcm-additive_results.rds",
+  read_cell("pcm-additive-matched-dcrt/pcm-additive_results.rds",
+            "matched_gcm_pcm_rf",
             "pcm_additive_matched", "rf", "setting1_xindep", 100L, ROWS[1]),
-  read_cell("pcm-additive-matched/pcm-additive_results.rds",
+  read_cell("pcm-additive-matched-dcrt/pcm-additive_results.rds",
+            "matched_gcm_pcm_rf",
             "pcm_additive_matched", "rf", "setting2", 600L, ROWS[2]),
   read_cell("pcm-additive-gam/pcm-additive-gam_results.rds",
+            "matched_gcm_pcm_gam",
             "pcm_additive_matched_gam", "gam", "setting2", 200L, ROWS[3])
 ) |>
   dplyr::mutate(row_label = factor(row_label, levels = ROWS)) |>

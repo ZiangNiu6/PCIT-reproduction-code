@@ -17,6 +17,10 @@
 #   colour/fill = procedure (Permutation, Asymptotic)
 #   line/border type = test (GCM solid, PCM dashed)
 #
+# The shared result also contains a separately registered dCRT method.  Its
+# complete schema is validated here, but the established four-curve manuscript
+# figure remains a matched GCM/PCM calibration comparison.
+#
 # The panel layout and typography follow manuscript Figure 3: a header row,
 # three scenario rows, panel tags a--i, left-side row labels, and one shared
 # bottom legend.
@@ -44,15 +48,19 @@ reproduction_root <- file.path(project_root, "reproduction-code")
 source(file.path(reproduction_root, "plotting-style.R"))
 
 cli_arguments <- commandArgs(trailingOnly = TRUE)
-supported_arguments <- "--validate-only"
+supported_arguments <- c("--validate-only", "--summary-only")
 unknown_arguments <- setdiff(cli_arguments, supported_arguments)
 if (length(unknown_arguments) > 0L) {
   stop(
     "Unknown argument(s): ", paste(unknown_arguments, collapse = ", "),
-    ". Supported argument: --validate-only"
+    ". Supported arguments: --validate-only, --summary-only"
   )
 }
 validate_only <- "--validate-only" %in% cli_arguments
+summary_only <- "--summary-only" %in% cli_arguments
+if (validate_only && summary_only) {
+  stop("Use at most one of --validate-only and --summary-only.")
+}
 
 manuscript_directory <- file.path(
   project_root,
@@ -62,9 +70,11 @@ manuscript_directory <- file.path(
 
 ############################# Preprocess the data ##############################
 sim_name <- "pcm-additive"
-result_namespace <- "pcm-additive-matched"
+result_namespace <- "pcm-additive-matched-dcrt"
 result_schema <- "pcm_additive_matched"
 combined_method <- "matched_gcm_pcm_rf"
+dcrt_method <- "dcrt_rf"
+expected_outer_methods <- c(combined_method, dcrt_method)
 display_methods <- c(
   "perm_gcm_rf", "asym_gcm_rf", "perm_pcm_rf", "asym_pcm_rf"
 )
@@ -83,9 +93,9 @@ results_dir <- file.path(
 
 if (!file.exists(results_dir)) {
   stop(
-    "Matched pcm-additive result not found at ", results_dir, ". ",
-    "Run `bash run_all_simulation.sh full`; the legacy pcm-additive result ",
-    "is intentionally not accepted."
+    "Matched pcm-additive/dCRT result not found at ", results_dir, ". ",
+    "Run `bash run_all_simulation.sh full`; pre-dCRT pcm-additive results ",
+    "are intentionally not accepted."
   )
 }
 results_raw <- readRDS(results_dir)
@@ -118,74 +128,107 @@ if (!current_grid_ok ||
 if (!is.list(results_raw) || !is.data.frame(results_raw$results) ||
     !all(c("grid_id", "run_id", "method", "output") %in%
          names(results_raw$results))) {
-  stop("The saved matched pcm-additive result has an incompatible structure.")
+  stop("The saved pcm-additive/dCRT result has an incompatible structure.")
 }
 
-results_table <- results_raw$results
-if (!is.list(results_table$output) || any(vapply(
-  results_table$output, is.null, logical(1)
+all_results_table <- results_raw$results
+if (!is.list(all_results_table$output) || any(vapply(
+  all_results_table$output, is.null, logical(1)
 ))) {
-  stop("Every matched pcm-additive row must contain a non-null output list.")
+  stop("Every pcm-additive method row must contain a non-null output list.")
 }
-if (!is.numeric(results_table$grid_id) || !is.numeric(results_table$run_id) ||
-    anyNA(results_table$grid_id) || anyNA(results_table$run_id) ||
-    any(!is.finite(results_table$grid_id)) ||
-    any(!is.finite(results_table$run_id)) ||
-    any(results_table$grid_id != as.integer(results_table$grid_id)) ||
-    any(results_table$run_id != as.integer(results_table$run_id))) {
+if (!is.numeric(all_results_table$grid_id) ||
+    !is.numeric(all_results_table$run_id) ||
+    anyNA(all_results_table$grid_id) || anyNA(all_results_table$run_id) ||
+    any(!is.finite(all_results_table$grid_id)) ||
+    any(!is.finite(all_results_table$run_id)) ||
+    any(all_results_table$grid_id != as.integer(all_results_table$grid_id)) ||
+    any(all_results_table$run_id != as.integer(all_results_table$run_id))) {
   stop("grid_id and run_id must be finite, non-missing integers.")
 }
-results_table$grid_id <- as.integer(results_table$grid_id)
-results_table$run_id <- as.integer(results_table$run_id)
-results_table$method <- as.character(results_table$method)
+all_results_table$grid_id <- as.integer(all_results_table$grid_id)
+all_results_table$run_id <- as.integer(all_results_table$run_id)
+all_results_table$method <- as.character(all_results_table$method)
 
-if (!identical(unique(results_table$method), combined_method)) {
+if (!setequal(unique(all_results_table$method), expected_outer_methods)) {
   stop(
-    "The matched pcm-additive result must contain only method `",
-    combined_method, "`."
+    "The pcm-additive result must contain exactly the outer methods ",
+    paste(expected_outer_methods, collapse = ", "), "."
   )
 }
 
 expected_grid_ids <- sort(as.integer(current_parameter_grid$grid_id))
-result_grid_ids <- sort(unique(results_table$grid_id))
+result_grid_ids <- sort(unique(all_results_table$grid_id))
 if (!identical(result_grid_ids, expected_grid_ids)) {
   stop(
-    "The matched pcm-additive results do not match the current 27-cell grid."
+    "The pcm-additive results do not match the current 27-cell grid."
   )
 }
 
 expected_replications <- 1000L
 expected_rows <- length(expected_grid_ids) * expected_replications
-if (nrow(results_table) != expected_rows) {
+expected_total_rows <- expected_rows * length(expected_outer_methods)
+if (nrow(all_results_table) != expected_total_rows) {
   stop(
-    "The matched pcm-additive result must contain exactly ", expected_rows,
-    " rows (27 grid cells x 1,000 replications); found ",
-    nrow(results_table), "."
+    "The pcm-additive result must contain exactly ", expected_total_rows,
+    " rows (27 grid cells x 1,000 replications x 2 methods); found ",
+    nrow(all_results_table), "."
   )
 }
 
-result_keys <- paste(results_table$grid_id, results_table$run_id, sep = ":")
+result_keys <- paste(
+  all_results_table$grid_id,
+  all_results_table$run_id,
+  all_results_table$method,
+  sep = ":"
+)
 if (anyDuplicated(result_keys)) {
   duplicate_index <- which(duplicated(result_keys))[1L]
   stop(
-    "Duplicate matched pcm-additive grid/run key: ",
+    "Duplicate pcm-additive grid/run/method key: ",
     result_keys[[duplicate_index]], "."
   )
 }
 expected_run_ids <- seq_len(expected_replications)
-run_ids_by_grid <- split(results_table$run_id, results_table$grid_id)
+run_ids_by_grid_method <- split(
+  all_results_table$run_id,
+  interaction(
+    all_results_table$grid_id,
+    all_results_table$method,
+    drop = TRUE
+  )
+)
 complete_run_ids <- vapply(
-  run_ids_by_grid,
+  run_ids_by_grid_method,
   function(run_ids) identical(sort(run_ids), expected_run_ids),
   logical(1)
 )
-if (length(complete_run_ids) != length(expected_grid_ids) ||
+expected_groups <- length(expected_grid_ids) * length(expected_outer_methods)
+if (length(complete_run_ids) != expected_groups ||
     !all(complete_run_ids)) {
-  bad_grid <- names(complete_run_ids)[which(!complete_run_ids)[1L]]
+  bad_group <- names(complete_run_ids)[which(!complete_run_ids)[1L]]
   stop(
-    "Every grid cell must contain run_id 1:1000 exactly once; first ",
-    "incomplete grid_id: ", bad_grid, "."
+    "Every grid/method group must contain run_id 1:1000 exactly once; ",
+    "first incomplete group: ", bad_group, "."
   )
+}
+
+# The existing manuscript figure displays the matched GCM/PCM comparison.  The
+# new dCRT rows are validated below but remain a separate outer method so they
+# cannot alter the matched-statistic output contract accidentally.
+results_table <- all_results_table[
+  all_results_table$method == combined_method,
+  ,
+  drop = FALSE
+]
+dcrt_results_table <- all_results_table[
+  all_results_table$method == dcrt_method,
+  ,
+  drop = FALSE
+]
+if (nrow(results_table) != expected_rows ||
+    nrow(dcrt_results_table) != expected_rows) {
+  stop("Each pcm-additive outer method must contain exactly 27,000 rows.")
 }
 
 parameter_grid <- current_parameter_grid
@@ -437,6 +480,190 @@ for (row_index in seq_len(nrow(results_table))) {
   statistic_matrix[row_index, ] <- statistics[c("gcm", "pcm")]
 }
 
+############################ Validate dCRT output ############################
+stop_bad_dcrt_output <- function(row_index, message) {
+  stop(
+    "Invalid dCRT output at grid_id=",
+    dcrt_results_table$grid_id[[row_index]],
+    ", run_id=", dcrt_results_table$run_id[[row_index]], ": ", message,
+    call. = FALSE
+  )
+}
+
+matched_keys <- paste(results_table$grid_id, results_table$run_id, sep = ":")
+dcrt_keys <- paste(
+  dcrt_results_table$grid_id,
+  dcrt_results_table$run_id,
+  sep = ":"
+)
+dcrt_to_matched <- match(dcrt_keys, matched_keys)
+if (anyNA(dcrt_to_matched) || anyDuplicated(dcrt_to_matched)) {
+  stop("dCRT and matched GCM/PCM grid/run keys are not one-to-one.")
+}
+
+dcrt_p_values <- numeric(nrow(dcrt_results_table))
+for (row_index in seq_len(nrow(dcrt_results_table))) {
+  output <- dcrt_results_table$output[[row_index]]
+  if (!is.list(output)) {
+    stop_bad_dcrt_output(row_index, "output is not a list")
+  }
+  if (!identical(output$schema_version, "pcm_additive_dcrt_rf_v1")) {
+    stop_bad_dcrt_output(
+      row_index,
+      "schema_version must be `pcm_additive_dcrt_rf_v1`"
+    )
+  }
+  if ("error" %in% names(output) &&
+      !is.null(output$error) && length(output$error) > 0L) {
+    stop_bad_dcrt_output(row_index, "output contains an error")
+  }
+  if (!is.numeric(output$p.value) || length(output$p.value) != 1L ||
+      !is.finite(output$p.value) || output$p.value < 0 || output$p.value > 1 ||
+      !is.numeric(output$p_values) ||
+      !identical(names(output$p_values), "dcrt_rf") ||
+      !isTRUE(all.equal(
+        unname(output$p.value),
+        unname(output$p_values[["dcrt_rf"]]),
+        tolerance = 0
+      ))) {
+    stop_bad_dcrt_output(row_index, "p.value or named p_values is invalid")
+  }
+  if (!is.numeric(output$statistic) || length(output$statistic) != 1L ||
+      !is.finite(output$statistic) ||
+      !identical(output$alternative, "two.sided")) {
+    stop_bad_dcrt_output(row_index, "statistic or alternative is invalid")
+  }
+  if (!is.numeric(output$tail_p_values) ||
+      !identical(names(output$tail_p_values), c("less", "greater")) ||
+      any(!is.finite(output$tail_p_values)) ||
+      any(output$tail_p_values < 0 | output$tail_p_values > 1)) {
+    stop_bad_dcrt_output(row_index, "one-sided diagnostic p-values are invalid")
+  }
+
+  model_x <- output$model_x
+  if (!is.list(model_x) ||
+      !identical(model_x$family, "gaussian") ||
+      !identical(model_x$mean, "random_forest_prediction") ||
+      !identical(model_x$variance, "homoskedastic") ||
+      !identical(
+        model_x$variance_estimator,
+        "mean_squared_in_sample_residual"
+      ) ||
+      !is.numeric(model_x$sigma2_hat) || length(model_x$sigma2_hat) != 1L ||
+      !is.finite(model_x$sigma2_hat) || model_x$sigma2_hat <= 0) {
+    stop_bad_dcrt_output(row_index, "Gaussian model-X diagnostics are invalid")
+  }
+
+  monte_carlo <- output$monte_carlo
+  if (!is.list(monte_carlo) ||
+      !is_whole_number(monte_carlo$M) || monte_carlo$M != 499L ||
+      !is_whole_number(monte_carlo$n_exceed) ||
+      monte_carlo$n_exceed < 0L ||
+      monte_carlo$n_exceed > monte_carlo$M ||
+      !is.numeric(monte_carlo$reference_mean) ||
+      length(monte_carlo$reference_mean) != 1L ||
+      !is.finite(monte_carlo$reference_mean) ||
+      !is.numeric(monte_carlo$reference_sd) ||
+      length(monte_carlo$reference_sd) != 1L ||
+      !is.finite(monte_carlo$reference_sd) ||
+      monte_carlo$reference_sd < 0 ||
+      !is.numeric(monte_carlo$minimum_p_value) ||
+      length(monte_carlo$minimum_p_value) != 1L ||
+      !isTRUE(all.equal(
+        monte_carlo$minimum_p_value,
+        1 / (monte_carlo$M + 1),
+        tolerance = 0
+      )) ||
+      !isTRUE(all.equal(
+        output$p.value,
+        (1 + monte_carlo$n_exceed) / (1 + monte_carlo$M),
+        tolerance = 0
+      ))) {
+    stop_bad_dcrt_output(row_index, "Monte Carlo diagnostics are inconsistent")
+  }
+
+  nuisance <- output$nuisance
+  if (!is.list(nuisance) ||
+      !is.numeric(nuisance$residual_product_sd) ||
+      length(nuisance$residual_product_sd) != 1L ||
+      !is.finite(nuisance$residual_product_sd) ||
+      nuisance$residual_product_sd <= 0 ||
+      !is.numeric(nuisance$analytic_reference_sd) ||
+      length(nuisance$analytic_reference_sd) != 1L ||
+      !is.finite(nuisance$analytic_reference_sd) ||
+      nuisance$analytic_reference_sd <= 0 ||
+      !is.numeric(nuisance$studentized_statistic) ||
+      length(nuisance$studentized_statistic) != 1L ||
+      !is.finite(nuisance$studentized_statistic) ||
+      !is.numeric(nuisance$reference_standardized_statistic) ||
+      length(nuisance$reference_standardized_statistic) != 1L ||
+      !is.finite(nuisance$reference_standardized_statistic) ||
+      !isTRUE(all.equal(
+        nuisance$studentized_statistic,
+        output$statistic / nuisance$residual_product_sd,
+        tolerance = 1e-12
+      )) ||
+      !isTRUE(all.equal(
+        nuisance$reference_standardized_statistic,
+        output$statistic / nuisance$analytic_reference_sd,
+        tolerance = 1e-12
+      ))) {
+    stop_bad_dcrt_output(row_index, "nuisance diagnostics are inconsistent")
+  }
+  matched_row <- dcrt_to_matched[[row_index]]
+  if (!isTRUE(all.equal(
+    nuisance$studentized_statistic,
+    unname(statistic_matrix[matched_row, "gcm"]),
+    tolerance = 1e-12
+  ))) {
+    stop_bad_dcrt_output(
+      row_index,
+      "studentized score does not match GCM under the shared RF fits"
+    )
+  }
+
+  configuration <- output$configuration
+  if (!is.list(configuration) ||
+      !identical(configuration$mean_learner, "random_forest") ||
+      !identical(configuration$fit_scope, "in_sample") ||
+      !identical(configuration$model_x_family, "gaussian") ||
+      !identical(configuration$model_x_variance, "homoskedastic") ||
+      !identical(
+        configuration$variance_estimator,
+        "mean_squared_in_sample_residual_divisor_n"
+      ) ||
+      !identical(as.integer(configuration$M), 499L) ||
+      !identical(configuration$refit_model_x_mean, FALSE) ||
+      !identical(
+        configuration$two_sided_rule,
+        "absolute_statistic_plus_one"
+      ) ||
+      !identical(as.integer(configuration$rf_num_trees), 500L) ||
+      !identical(as.integer(configuration$rf_num_threads), 1L)) {
+    stop_bad_dcrt_output(row_index, "RF configuration is not canonical")
+  }
+  expected_dcrt_flags <- c(
+    "nuisance_fit_in_sample", "model_x_mean_not_refit",
+    "fixed_model_x_draw_count", "single_thread_rf"
+  )
+  if (!is.logical(output$flags) ||
+      !identical(names(output$flags), expected_dcrt_flags) ||
+      anyNA(output$flags) || !all(output$flags)) {
+    stop_bad_dcrt_output(row_index, "implementation-integrity flags are invalid")
+  }
+  if (!is.numeric(output$seeds) ||
+      !identical(
+        names(output$seeds),
+        c("nuisance_fit", "YonZ", "XonZ", "model_x_resampling")
+      ) ||
+      anyNA(output$seeds) || any(!is.finite(output$seeds)) ||
+      any(output$seeds != as.integer(output$seeds))) {
+    stop_bad_dcrt_output(row_index, "seeds must be finite named integers")
+  }
+
+  dcrt_p_values[[row_index]] <- output$p.value
+}
+
 ########################## Expand matched p-values ############################
 pvals_df <- dplyr::bind_cols(
   results_table[c("grid_id", "run_id")],
@@ -449,19 +676,24 @@ pvals_df <- dplyr::bind_cols(
   ) |>
   dplyr::left_join(parameter_grid, by = "grid_id")
 
+dcrt_pvals_df <- dplyr::bind_cols(
+  dcrt_results_table[c("grid_id", "run_id")],
+  data.frame(
+    method = dcrt_method,
+    p.value = dcrt_p_values,
+    stringsAsFactors = FALSE
+  )
+) |>
+  dplyr::left_join(parameter_grid, by = "grid_id")
+
 if (nrow(pvals_df) != expected_rows * length(display_methods) ||
     anyNA(pvals_df$p.value) || any(!is.finite(pvals_df$p.value))) {
   stop("Expansion of the matched p-values failed its integrity check.")
 }
-
-if (validate_only) {
-  cat(
-    "Validated matched pcm-additive result: ", expected_rows,
-    " complete grid/run outputs and ", nrow(pvals_df),
-    " finite displayed p-values.\n",
-    sep = ""
-  )
-  quit(save = "no", status = 0L)
+if (nrow(dcrt_pvals_df) != expected_rows ||
+    anyNA(dcrt_pvals_df$p.value) ||
+    any(!is.finite(dcrt_pvals_df$p.value))) {
+  stop("Expansion of the dCRT p-values failed its integrity check.")
 }
 
 alpha <- 0.05
@@ -480,6 +712,50 @@ add_wilson_bounds <- function(data, confidence = 0.95) {
   data$reject_lower <- pmax(0, center - half_width)
   data$reject_upper <- pmin(1, center + half_width)
   data
+}
+
+############################ Summarize dCRT ###################################
+dcrt_summary_df <- dcrt_pvals_df |>
+  dplyr::mutate(reject = as.integer(.data$p.value <= alpha)) |>
+  dplyr::group_by(
+    .data$grid_id,
+    .data$method,
+    .data$dgp,
+    .data$n,
+    .data$gamma_signal,
+    .data$ground_truth
+  ) |>
+  dplyr::summarise(
+    n_reject = sum(.data$reject),
+    n_valid = dplyr::n(),
+    .groups = "drop"
+  ) |>
+  add_wilson_bounds() |>
+  dplyr::mutate(
+    mean_learner = "random_forest",
+    model_x_law = "homoskedastic_gaussian"
+  )
+
+if (validate_only) {
+  cat(
+    "Validated pcm-additive result: ", expected_rows,
+    " matched and ", length(dcrt_p_values),
+    " dCRT grid/run outputs, plus ", nrow(pvals_df),
+    " finite displayed GCM/PCM p-values and ", nrow(dcrt_summary_df),
+    " dCRT summary rows.\n",
+    sep = ""
+  )
+  quit(save = "no", status = 0L)
+}
+
+dcrt_summary_path <- file.path(
+  dirname(results_dir),
+  "pcm-additive-dcrt-rejection-summary.csv"
+)
+utils::write.csv(dcrt_summary_df, dcrt_summary_path, row.names = FALSE)
+cat("dCRT summary saved to ", dcrt_summary_path, "\n", sep = "")
+if (summary_only) {
+  quit(save = "no", status = 0L)
 }
 
 ########################## Compute standard rejection rates ####################
