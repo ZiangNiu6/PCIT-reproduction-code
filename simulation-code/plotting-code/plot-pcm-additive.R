@@ -1110,7 +1110,8 @@ shared_legend <- cowplot::get_plot_component(
     theme(
       legend.position = "bottom",
       legend.box = "horizontal",
-      legend.direction = "horizontal"
+      legend.direction = "horizontal",
+      legend.key.width = grid::unit(0.42, "in")
     ),
   "guide-box-bottom"
 )
