@@ -1590,7 +1590,7 @@ if (identical(input_schema, SCHEMA_V4)) {
       expand = expansion(mult = c(0.01, 0.02))
     ) +
     labs(
-      title = "EIF5A conditional-effect response",
+      title = "EIF5A power",
       x = "Signal strength",
       y = "Rejection rate"
     ) +
