@@ -41,8 +41,10 @@ Rscript --vanilla check_outputs.R --verify-results
 ```
 
 These commands require no raw data, Nextflow, or cluster. They create ten PDFs
-in `results/figures-and-tables`. Diagnostic plots and tables remain beside
-their domain results. Figure checking validates PDF headers, the exact figure
+in `results/figures-and-tables`. Only the 24 canonical numerical artifacts,
+their manifest, and those ten PDFs are bundled under `results/`. Derived
+summaries, diagnostic plots, and previews are rebuilt beside their domain
+results and ignored by Git. Figure checking validates PDF headers, the exact figure
 set, and nonempty files. `--verify-results` additionally checks the bundled
 numerical artifacts against the manifest; omit it for fresh numerical reruns,
 whose bytes may differ across systems. Use `--figure-dir DIR` or

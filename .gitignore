@@ -10,5 +10,16 @@ results/ccle/input-provenance.json
 results/frangieh-2021/intermediate-data/
 results/frangieh-2021/plots/
 results/ccle/plots/
+# Rebuilt from the canonical numerical artifacts by the plot-only runners.
+results/simulation-results/glm-variance-robustness/*.pdf
+results/simulation-results/glm-variance-robustness/*.png
+results/simulation-results/nb-permutation-signflip-continuous-dispersion-estimated-theta/*.csv
+results/simulation-results/nb-permutation-signflip-continuous-dispersion-estimated-theta/*.pdf
+results/simulation-results/nb-permutation-signflip-continuous-dispersion-estimated-theta/*.png
+results/simulation-results/pcm-additive-matched-dcrt/pcm-additive-dcrt-rejection-summary.csv
+results/frangieh-2021/score-calibration-nonpositive-nulls/score_diagnostics.rds
+results/frangieh-2021/score-calibration-nonpositive-nulls/score_fdr_aggregated.rds
+results/frangieh-2021/score-calibration-nonpositive-nulls/score_fdr_summary.rds
+results/frangieh-2021/score-calibration-nonpositive-nulls/score_pair_long.rds
 results/*-full/
 data/
