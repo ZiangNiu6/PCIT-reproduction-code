@@ -1,0 +1,149 @@
+{
+  "schema": "pcit_bundled_results_v1",
+  "artifacts": [
+    {
+      "path": "results/simulation-results/glm-variance-robustness/illustrative-example-results.rds",
+      "bytes": 1752922,
+      "sha256": "d2b38469fd5426a469086d6f48f308911003ae004a32cfdb73b1cb14515f59fa",
+      "source": "existing publication analysis artifact; copied without modification"
+    },
+    {
+      "path": "results/simulation-results/nb-permutation-signflip-continuous-dispersion-estimated-theta/nb-permutation-signflip_results.rds",
+      "bytes": 14712245,
+      "sha256": "0baac1ec3aeab47c244b3547aada831472dd526245b63c49b6541bd4e680604c",
+      "source": "existing publication analysis artifact; copied without modification"
+    },
+    {
+      "path": "results/simulation-results/pcm-additive-matched-dcrt/pcm-additive_results.rds",
+      "bytes": 5075377,
+      "sha256": "2c0f4fae1b7532a201968ad3cee2e7c8603b67ffbff61e4557d5f3f028130b58",
+      "source": "existing publication analysis artifact; copied without modification"
+    },
+    {
+      "path": "results/ccle/ccle-typeI-synthY-30targets-matched-v4-results.rds",
+      "bytes": 6623780,
+      "sha256": "e8eabbe00a68be31833927c0d4423b0b02cf64ce346a8623f8a5eb70b3cab761",
+      "source": "existing publication analysis artifact; copied without modification"
+    },
+    {
+      "path": "results/frangieh-2021/score-calibration-nonpositive-nulls/score_fdr_rep001.rds",
+      "bytes": 148570,
+      "sha256": "facf7eafa31221ed6b15015a45c6f110e2f2160650530804826d21a1751dc826",
+      "source": "existing publication analysis artifact; copied without modification"
+    },
+    {
+      "path": "results/frangieh-2021/score-calibration-nonpositive-nulls/score_fdr_rep002.rds",
+      "bytes": 148848,
+      "sha256": "d38d2b5ed7b0c457ebf32575cce42e3c6751d138004e139ea7e101248429ca38",
+      "source": "existing publication analysis artifact; copied without modification"
+    },
+    {
+      "path": "results/frangieh-2021/score-calibration-nonpositive-nulls/score_fdr_rep003.rds",
+      "bytes": 147869,
+      "sha256": "2327bbeeadd60587d46d3ff17c6994be485dacfa207eebe52809bd15ba591b60",
+      "source": "existing publication analysis artifact; copied without modification"
+    },
+    {
+      "path": "results/frangieh-2021/score-calibration-nonpositive-nulls/score_fdr_rep004.rds",
+      "bytes": 148396,
+      "sha256": "45eea6e17822d68403307f7d57dac5355db92a745d7c323dc62c226e0ac0f35a",
+      "source": "existing publication analysis artifact; copied without modification"
+    },
+    {
+      "path": "results/frangieh-2021/score-calibration-nonpositive-nulls/score_fdr_rep005.rds",
+      "bytes": 148187,
+      "sha256": "b8e4cb72f953a5f3deb437bca384150774b696103b3dd2d24c3ded709c2956c4",
+      "source": "existing publication analysis artifact; copied without modification"
+    },
+    {
+      "path": "results/frangieh-2021/score-calibration-nonpositive-nulls/score_fdr_rep006.rds",
+      "bytes": 148639,
+      "sha256": "9021e7f4ddbacd4394263112d243d5a6c5f017039faedf7105d65137105a407c",
+      "source": "existing publication analysis artifact; copied without modification"
+    },
+    {
+      "path": "results/frangieh-2021/score-calibration-nonpositive-nulls/score_fdr_rep007.rds",
+      "bytes": 148432,
+      "sha256": "280b2c03be0d2f7b9e91275c56db8f5a601dac716f1f5fcbfb57bb7bddf810cc",
+      "source": "existing publication analysis artifact; copied without modification"
+    },
+    {
+      "path": "results/frangieh-2021/score-calibration-nonpositive-nulls/score_fdr_rep008.rds",
+      "bytes": 148790,
+      "sha256": "1cae334e987b1c8ea7d0033da127db885304772e4c2d1acc0c237205ab284195",
+      "source": "existing publication analysis artifact; copied without modification"
+    },
+    {
+      "path": "results/frangieh-2021/score-calibration-nonpositive-nulls/score_fdr_rep009.rds",
+      "bytes": 148678,
+      "sha256": "85a260b66b5015a55dcbb075ad49de160d3d4ebae11e4acbaf723c006142eb8e",
+      "source": "existing publication analysis artifact; copied without modification"
+    },
+    {
+      "path": "results/frangieh-2021/score-calibration-nonpositive-nulls/score_fdr_rep010.rds",
+      "bytes": 148761,
+      "sha256": "7753ed2d630f8a9cfad2aac2ce9f2cbef5e1f7557dca0da20f740d335f1c5e45",
+      "source": "existing publication analysis artifact; copied without modification"
+    },
+    {
+      "path": "results/frangieh-2021/score-calibration-nonpositive-nulls/score_fdr_rep011.rds",
+      "bytes": 147891,
+      "sha256": "b089445c1c2748662cbe9e46e950c73a5d8ae727f83072a14311a0e563099b49",
+      "source": "existing publication analysis artifact; copied without modification"
+    },
+    {
+      "path": "results/frangieh-2021/score-calibration-nonpositive-nulls/score_fdr_rep012.rds",
+      "bytes": 149372,
+      "sha256": "a0fec353868261807991eee56256bc84819d44050e04af5cc51a2ccc0858618d",
+      "source": "existing publication analysis artifact; copied without modification"
+    },
+    {
+      "path": "results/frangieh-2021/score-calibration-nonpositive-nulls/score_fdr_rep013.rds",
+      "bytes": 148572,
+      "sha256": "f2473a85d8679566ef664b1e1e290c08b10be71197d01839da3d83800ed63ab5",
+      "source": "existing publication analysis artifact; copied without modification"
+    },
+    {
+      "path": "results/frangieh-2021/score-calibration-nonpositive-nulls/score_fdr_rep014.rds",
+      "bytes": 149257,
+      "sha256": "0b458257ae923bee6d589832a0e02f13b23836eb6c7f788f5895e188719fdc1e",
+      "source": "existing publication analysis artifact; copied without modification"
+    },
+    {
+      "path": "results/frangieh-2021/score-calibration-nonpositive-nulls/score_fdr_rep015.rds",
+      "bytes": 148844,
+      "sha256": "de11b2b4d8fd9e5b7664f2f34bd419a60b7f65e1ba0d3cfc8f9722173b206787",
+      "source": "existing publication analysis artifact; copied without modification"
+    },
+    {
+      "path": "results/frangieh-2021/score-calibration-nonpositive-nulls/score_fdr_rep016.rds",
+      "bytes": 148109,
+      "sha256": "656903c579f129031b7a648c5fa0ea36756c0d6b3488ad608c2bbb2caad5083f",
+      "source": "existing publication analysis artifact; copied without modification"
+    },
+    {
+      "path": "results/frangieh-2021/score-calibration-nonpositive-nulls/score_fdr_rep017.rds",
+      "bytes": 147633,
+      "sha256": "c6eb18d94ed7db32db25648979b900b0fd286223ff3212fb4f82e632f38d1524",
+      "source": "existing publication analysis artifact; copied without modification"
+    },
+    {
+      "path": "results/frangieh-2021/score-calibration-nonpositive-nulls/score_fdr_rep018.rds",
+      "bytes": 148221,
+      "sha256": "144f7ebdc2e966471d22b5504f4aaff23a338064ec7ce4509e525fac98079149",
+      "source": "existing publication analysis artifact; copied without modification"
+    },
+    {
+      "path": "results/frangieh-2021/score-calibration-nonpositive-nulls/score_fdr_rep019.rds",
+      "bytes": 148224,
+      "sha256": "5101685dc760cdc424217a7f61e423abe1f209b52e5cf87905e42cbe9f481545",
+      "source": "existing publication analysis artifact; copied without modification"
+    },
+    {
+      "path": "results/frangieh-2021/score-calibration-nonpositive-nulls/score_fdr_rep020.rds",
+      "bytes": 148728,
+      "sha256": "db9e6053e7804c0e584735637547992aff83a6a3da65da8defaa4bbfc533cbd5",
+      "source": "existing publication analysis artifact; copied without modification"
+    }
+  ]
+}

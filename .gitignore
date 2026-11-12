@@ -1,0 +1,14 @@
+.Rhistory
+.RData
+.Rproj.user/
+__pycache__/
+*.pyc
+.nextflow*
+results/ccle/mutation.txt
+results/ccle/response.csv
+results/ccle/input-provenance.json
+results/frangieh-2021/intermediate-data/
+results/frangieh-2021/plots/
+results/ccle/plots/
+results/*-full/
+data/

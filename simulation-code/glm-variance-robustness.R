@@ -46,7 +46,20 @@ if (length(missing_packages) > 0L) {
 
 args <- commandArgs(trailingOnly = TRUE)
 quick <- "--quick" %in% args
-plot_only <- "--plot-only" %in% args
+validate_only <- "--validate-only" %in% args
+plot_only <- "--plot-only" %in% args || validate_only
+flag_options <- c("--quick", "--plot-only", "--validate-only")
+value_options <- c(
+  "n", "repetitions", "permutations", "cores", "seed", "alpha",
+  "x-intercept", "conditional-x-slope", "y-intercept", "y-slope",
+  "dispersion", "robustness-dispersion", "alternative", "output-dir"
+)
+option_names <- sub("=.*$", "", args)
+if (any(!option_names %in% c(flag_options, paste0("--", value_options))) ||
+    anyDuplicated(option_names) ||
+    any(option_names %in% paste0("--", value_options) & !grepl("=", args))) {
+  stop("Unknown, repeated, or malformed option. Use --name=value for numeric options.")
+}
 
 read_option <- function(name, default) {
   prefix <- paste0("--", name, "=")
@@ -100,13 +113,10 @@ script_directory <- if (length(script_argument) == 1L) {
 } else {
   normalizePath(getwd())
 }
-project_root <- normalizePath(file.path(script_directory, "..", ".."))
-results_root <- Sys.getenv("LOCAL_PDRT_DATA_DIR", unset = "")
-if (!nzchar(results_root)) {
-  results_root <- file.path(project_root, "results")
-} else if (!grepl("^/", results_root)) {
-  results_root <- file.path(project_root, results_root)
-}
+source(file.path(script_directory, "..", "reproduction-helpers.R"))
+script_file <- file.path(script_directory, "glm-variance-robustness.R")
+package_root <- reproduction_root(script_file)
+results_root <- reproduction_results_root(package_root)
 default_output_directory <- file.path(
   results_root,
   "simulation-results",
@@ -243,8 +253,10 @@ config <- list(
 )
 
 output_directory <- read_option("output-dir", default_output_directory)
-dir.create(output_directory, recursive = TRUE, showWarnings = FALSE)
-output_directory <- normalizePath(output_directory)
+if (!plot_only) {
+  dir.create(output_directory, recursive = TRUE, showWarnings = FALSE)
+}
+output_directory <- normalizePath(output_directory, mustWork = FALSE)
 
 if (.Platform$OS.type == "windows" && config$cores > 1L) {
   warning("Parallel fork execution is unavailable on Windows; using one core.")
@@ -1133,7 +1145,9 @@ make_figure <- function(replicate_results, summary, config, output_directory) {
   ))
 }
 
-results_path <- file.path(output_directory, "illustrative-example-results.rds")
+results_path <- Sys.getenv("PCIT_GLM_RESULTS_FILE", unset = file.path(
+  output_directory, "illustrative-example-results.rds"
+))
 
 if (plot_only) {
   if (!file.exists(results_path)) {
@@ -1194,7 +1208,39 @@ if (plot_only) {
       paste(missing_result_columns, collapse = ", "), "."
     )
   }
-  summary <- saved$summary
+  pvalue_columns <- c(
+    "p_normal", "p_permutation_unstudentized",
+    "p_permutation_information", "p_permutation_empirical"
+  )
+  expected_keys <- unlist(lapply(config$scenarios$scenario, function(scenario) {
+    paste(scenario, seq_len(config$repetitions), sep = ":")
+  }), use.names = FALSE)
+  if (!is.data.frame(replicate_results) ||
+      !all(c("scenario", "replicate", pvalue_columns) %in%
+           names(replicate_results))) {
+    stop("Saved GLM results are missing replicate identifiers or p-values.")
+  }
+  actual_keys <- paste(replicate_results$scenario, replicate_results$replicate,
+                       sep = ":")
+  pvalues <- as.matrix(replicate_results[pvalue_columns])
+  if (length(actual_keys) != length(expected_keys) ||
+      anyDuplicated(actual_keys) || !setequal(actual_keys, expected_keys) ||
+      any(!is.finite(pvalues)) || any(pvalues < 0 | pvalues > 1)) {
+    stop("Saved GLM results have incomplete/duplicate replicates or invalid p-values.")
+  }
+  recomputed_summary <- summarize_pvalues(replicate_results, config$alpha)
+  # Labels may change editorially without changing the simulation. Validate
+  # identifiers and numerical summaries, then render with the current labels.
+  summary_fields <- setdiff(names(recomputed_summary),
+                            c("scenario_label", "method_label"))
+  if (!is.data.frame(saved$summary) ||
+      !all(summary_fields %in% names(saved$summary)) ||
+      !isTRUE(all.equal(saved$summary[summary_fields],
+                       recomputed_summary[summary_fields],
+                       tolerance = 1e-12, check.attributes = FALSE))) {
+    stop("Saved GLM summary disagrees with the replicate results.")
+  }
+  summary <- recomputed_summary
   scale_diagnostics <- saved$scale_diagnostics
   dgp_diagnostics <- saved$dgp_diagnostics
   message("Loaded existing results from ", results_path)
@@ -1348,9 +1394,18 @@ if (plot_only) {
     scale_diagnostics = scale_diagnostics,
     dgp_diagnostics = dgp_diagnostics,
     style_reference = "https://github.com/Katsevich-Lab/spacrt-manuscript",
-    session_info = utils::sessionInfo()
+    session_info = utils::sessionInfo(),
+    provenance = list(
+      code_md5 = unname(tools::md5sum(script_file)),
+      lockfile_md5 = unname(tools::md5sum(file.path(package_root, "renv.lock")))
+    )
   )
-  saveRDS(saved, results_path)
+  temporary_result <- tempfile(".glm-result-", tmpdir = dirname(results_path))
+  saveRDS(saved, temporary_result)
+  if (!file.rename(temporary_result, results_path)) {
+    unlink(temporary_result)
+    stop("Could not atomically publish GLM result: ", results_path)
+  }
   utils::write.csv(
     replicate_results,
     file.path(output_directory, "replicate-results.csv"),
@@ -1376,6 +1431,12 @@ if (plot_only) {
     file.path(output_directory, "session-info.txt")
   )
   message(sprintf("Simulation completed in %.1f seconds.", elapsed_seconds))
+}
+
+if (validate_only) {
+  cat("Validated canonical GLM result: ", nrow(replicate_results),
+      " complete scenario/replicate outputs.\n", sep = "")
+  quit(save = "no", status = 0L)
 }
 
 figure_paths <- make_figure(

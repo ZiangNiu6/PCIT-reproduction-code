@@ -14,8 +14,10 @@ library(dplyr)
 
 # --- Parse arguments ---
 args <- commandArgs(trailingOnly = TRUE)
+force_rerun <- "--force" %in% args
+args <- args[args != "--force"]
 if (length(args) != 1L) {
-  stop("Usage: Rscript data_preprocessing.R <num_genes>")
+  stop("Usage: Rscript data_preprocessing.R <num_genes> [--force]")
 }
 num_genes <- as.numeric(args[[1L]])
 if (length(num_genes) != 1L || !is.finite(num_genes) ||
@@ -28,15 +30,23 @@ num_genes <- as.integer(num_genes)
 args_all <- commandArgs(trailingOnly = FALSE)
 script_path <- normalizePath(sub("--file=", "", args_all[grep("--file=", args_all)]))
 script_dir <- dirname(script_path)
-project_root <- normalizePath(file.path(script_dir, "..", ".."))
-results_root <- Sys.getenv(
-  "LOCAL_PDRT_DATA_DIR",
-  unset = file.path(project_root, "results")
-)
+source(file.path(script_dir, "..", "reproduction-helpers.R"))
+project_root <- reproduction_root(script_dir)
+results_root <- reproduction_results_root(project_root)
 intermediate_dir <- Sys.getenv(
   "FRANGIEH_INTERMEDIATE_DIR",
   unset = file.path(results_root, "frangieh-2021", "intermediate-data")
 )
+
+source(file.path(script_dir, "workflow-io.R"))
+if (num_genes != 1000L) stop("The canonical reproduction requires num_genes=1000")
+existing <- file.exists(file.path(intermediate_dir, "current-generation.rds")) ||
+  any(file.exists(file.path(intermediate_dir, frangieh_intermediate_files)))
+if (existing && !force_rerun) {
+  frangieh_validate_intermediates(intermediate_dir, script_dir = script_dir)
+  cat("Reusing the complete validated intermediate bundle.\n")
+  quit(save = "no", status = 0L)
+}
 
 # --- Paths ---
 frangieh_dir <- Sys.getenv("LOCAL_FRANGIEH_2021_DATA_DIR")
@@ -214,8 +224,13 @@ cat(sprintf("Cells with at least one NT gRNA: %d / %d\n",
             sum(has_any_nt), length(has_any_nt)))
 
 # --- Build per-positive-control cell mask + pure-NT control set --------------
-# Standard Perturb-seq cell-set design (matches sceptre):
-#   * Pure-NT cells     = cells carrying NT gRNAs and NO gene-targeting gRNAs.
+# Original PCIT v2 cohort retained by explicit user instruction. This includes
+# multi-guide cells and excludes only measured-target guides from pure_nt; it
+# intentionally does not adopt the single-guide cohort used by Barry et al.
+# A scientific correction requires a separate reviewed numerical rerun.
+# Historical PCIT cell-set construction:
+#   * Historical pure_nt = cells carrying NT gRNAs and NO measured-target
+#                          gene-targeting gRNAs.
 #                         These are the universal control population.
 #   * Per-positive-g    = pure-NT cells (controls) UNION cells carrying any
 #                         gRNA targeting g (treated).
@@ -253,19 +268,40 @@ cat(sprintf("Cells per positive-control pair (mean +/- SD): %.0f +/- %.0f (treat
             sd  (vapply(pos_cell_masks, sum, integer(1))),
             mean(n_treated_per_pos), sd(n_treated_per_pos)))
 
-# --- Save intermediate data ---
-dir.create(intermediate_dir, showWarnings = FALSE, recursive = TRUE)
-
-saveRDS(multimodal_odm_sub@modalities, file.path(intermediate_dir, "subsetted_ODM.rds"))
-saveRDS(covariate_matrix, file.path(intermediate_dir, "covariate_matrix.rds"))
-saveRDS(negative_control_list, file.path(intermediate_dir, "negative_control_pairs.rds"))
-saveRDS(positive_control_list, file.path(intermediate_dir, "positive_control_pairs.rds"))
-saveRDS(gene_list, file.path(intermediate_dir, "gene_list.rds"))
-saveRDS(null_splits, file.path(intermediate_dir, "null_splits.rds"))
-saveRDS(nt_grna_assigned, file.path(intermediate_dir, "nt_grna_assigned.rds"))
-saveRDS(has_any_nt, file.path(intermediate_dir, "has_any_nt.rds"))
-saveRDS(pure_nt, file.path(intermediate_dir, "pure_nt.rds"))
-saveRDS(pos_cell_masks, file.path(intermediate_dir, "pos_cell_masks.rds"))
+# --- Publish an immutable intermediate bundle ------------------------------
+# A same-filesystem pointer rename publishes all ten files together. A reader
+# already using an older generation keeps that complete immutable generation.
+generations <- file.path(intermediate_dir, ".generations")
+dir.create(generations, showWarnings = FALSE, recursive = TRUE)
+generation <- paste0("generation-", format(Sys.time(), "%Y%m%d%H%M%S", tz = "UTC"), "-", Sys.getpid())
+staging <- tempfile(pattern = ".staging-", tmpdir = generations)
+dir.create(staging)
+objects <- list(
+  subsetted_ODM = multimodal_odm_sub@modalities,
+  covariate_matrix = covariate_matrix,
+  negative_control_pairs = negative_control_list,
+  positive_control_pairs = positive_control_list,
+  gene_list = gene_list, null_splits = null_splits,
+  nt_grna_assigned = nt_grna_assigned, has_any_nt = has_any_nt,
+  pure_nt = pure_nt, pos_cell_masks = pos_cell_masks
+)
+for (name in names(objects)) saveRDS(objects[[name]], file.path(staging, paste0(name, ".rds")))
+provenance <- list(
+  schema = "frangieh_intermediate_bundle_v1",
+  files = frangieh_file_manifest(file.path(staging, frangieh_intermediate_files)),
+  raw_metadata = frangieh_file_manifest(c(gene_metadata_fp, grna_metadata_fp)),
+  raw_backing_files = frangieh_file_manifest(c(gene_odm_fp, grna_odm_fp), hash = FALSE),
+  code = frangieh_file_manifest(c(file.path(script_dir, "data_preprocessing.R"), file.path(script_dir, "workflow-io.R"))),
+  packages = setNames(vapply(c("ondisc", "dplyr", "Matrix"), function(x) as.character(utils::packageVersion(x)), character(1)), c("ondisc", "dplyr", "Matrix")),
+  session = utils::sessionInfo(),
+  cohort_policy = "original_v2_cohort_retained_without_scientific_changes"
+)
+saveRDS(provenance, file.path(staging, "intermediate-provenance.rds"))
+frangieh_validate_intermediates(staging, script_dir = script_dir)
+published <- file.path(generations, generation)
+if (!file.rename(staging, published)) stop("Could not publish intermediate generation")
+frangieh_atomic_rds(generation, file.path(intermediate_dir, "current-generation.rds"), replace = force_rerun)
+intermediate_dir <- published
 
 cat(sprintf("\nIntermediate data saved to %s\n", intermediate_dir))
 cat(sprintf("  subsetted_ODM.rds\n"))

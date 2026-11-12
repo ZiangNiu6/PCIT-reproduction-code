@@ -38,17 +38,17 @@ if (!"adaptive_fdr_bh" %in% getNamespaceExports("pcmt")) {
 script_arg <- grep("^--file=", commandArgs(trailingOnly = FALSE), value = TRUE)
 if (length(script_arg) != 1L) stop("Could not determine this script's path")
 script_dir <- normalizePath(dirname(sub("^--file=", "", script_arg)))
-project_root <- normalizePath(file.path(script_dir, "..", ".."))
-results_root <- Sys.getenv(
-  "LOCAL_PDRT_DATA_DIR",
-  unset = file.path(project_root, "results")
-)
+source(file.path(script_dir, "..", "reproduction-helpers.R"))
+project_root <- reproduction_root(script_dir)
+results_root <- reproduction_results_root(project_root)
 intermediate_dir <- Sys.getenv(
   "FRANGIEH_INTERMEDIATE_DIR",
   unset = file.path(results_root, "frangieh-2021", "intermediate-data")
 )
 source(file.path(script_dir, "method_config.R"))
 source(file.path(script_dir, "score_helpers.R"))
+source(file.path(script_dir, "workflow-io.R"))
+source(file.path(script_dir, "result-validation.R"))
 results_dir <- Sys.getenv(
   "FRANGIEH_SCORE_RESULTS_DIR",
   unset = file.path(results_root, "frangieh-2021", PERTURB_RESULTS_SUBDIR)
@@ -57,15 +57,29 @@ dir.create(results_dir, showWarnings = FALSE, recursive = TRUE)
 
 ## --- Parse args ------------------------------------------------------------
 args <- commandArgs(trailingOnly = TRUE)
-if (length(args) != 1L) stop("Usage: Rscript run_combined_fdr.R <rep_idx>")
-rep_idx <- as.integer(args[[1L]])
+force_rerun <- "--force" %in% args
+args <- args[args != "--force"]
+if (length(args) != 1L) stop("Usage: Rscript run_combined_fdr.R <rep_idx> [--force]")
+rep_number <- suppressWarnings(as.numeric(args[[1L]]))
+if (length(rep_number) != 1L || !is.finite(rep_number) || rep_number != as.integer(rep_number)) stop("rep_idx must be an integer")
+rep_idx <- as.integer(rep_number)
 N_REPS_MAX <- 20L
 stopifnot(!is.na(rep_idx), rep_idx >= 1L, rep_idx <= N_REPS_MAX)
 rep_seed <- 1000L + rep_idx
 
+out_file <- file.path(results_dir, sprintf("score_fdr_rep%03d.rds", rep_idx))
+if (file.exists(out_file) && !force_rerun) {
+  available_inputs <- frangieh_intermediate_directory(intermediate_dir)
+  if (!all(file.exists(file.path(available_inputs, frangieh_intermediate_files)))) available_inputs <- NULL
+  validate_rep(readRDS(out_file), out_file, expected_rep = rep_idx, intermediate_dir = available_inputs)
+  cat("Reusing valid replicate: ", out_file, "\n", sep = "")
+  quit(save = "no", status = 0L)
+}
+intermediate_dir <- frangieh_validate_intermediates(intermediate_dir, script_dir = script_dir)
+
 ## --- Load preprocessed data ------------------------------------------------
 cat("Loading intermediate data...\n")
-subsetted_ODM <- readRDS(file.path(intermediate_dir, "subsetted_ODM.rds"))
+subsetted_ODM <- frangieh_rebind_modalities(readRDS(file.path(intermediate_dir, "subsetted_ODM.rds")))
 covariate_matrix <- readRDS(file.path(intermediate_dir, "covariate_matrix.rds"))
 gene_list <- readRDS(file.path(intermediate_dir, "gene_list.rds"))
 positive_control_pairs <- readRDS(
@@ -496,6 +510,12 @@ run_rep <- function() {
 }
 
 ## --- Run and save ----------------------------------------------------------
+local({
+lock_dir <- paste0(out_file, ".lock")
+if (!dir.create(lock_dir, showWarnings = FALSE)) stop("Replicate is locked by another worker: ", lock_dir)
+on.exit(unlink(lock_dir, recursive = TRUE), add = TRUE)
+if (file.exists(out_file) && !force_rerun) stop("Replicate appeared while preparing; rerun the resume command")
+provenance <- frangieh_provenance(intermediate_dir, script_dir)
 t_global <- Sys.time()
 result <- run_rep()
 total_minutes <- as.numeric(difftime(Sys.time(), t_global, units = "mins"))
@@ -522,12 +542,16 @@ output <- list(
     B_max = B_MAX,
     alternative = "two.sided"
   ),
-  result = result
+  result = result,
+  provenance = provenance
 )
 
 out_file <- file.path(
   results_dir,
   sprintf("score_fdr_rep%03d.rds", rep_idx)
 )
-saveRDS(output, out_file)
+validate_rep(output, out_file, expected_rep = rep_idx, intermediate_dir = intermediate_dir)
+frangieh_atomic_rds(output, out_file, replace = force_rerun)
 cat("Result saved to:", out_file, "\n")
+
+})

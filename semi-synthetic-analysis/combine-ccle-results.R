@@ -107,13 +107,14 @@ if (length(cli_args)) {
   status_indices <- seq_len(index_value)
 }
 
-data_root <- Sys.getenv("LOCAL_PDRT_DATA_DIR", unset = "")
-if (!nzchar(data_root)) {
-  stop(
-    "LOCAL_PDRT_DATA_DIR must point to the external data/results directory.",
-    call. = FALSE
-  )
-}
+script_arg <- grep("^--file=", commandArgs(FALSE), value = TRUE)
+if (length(script_arg) != 1L) stop("Run this script with Rscript.")
+script_file <- normalizePath(sub("^--file=", "", script_arg[[1L]]))
+script_dir <- dirname(script_file)
+source(file.path(script_dir, "validation-utils.R"))
+source(file.path(script_dir, "..", "reproduction-helpers.R"))
+package_root <- reproduction_root(script_file)
+data_root <- reproduction_results_root(package_root)
 data_root <- path.expand(data_root)
 if (!dir.exists(data_root)) {
   stop("LOCAL_PDRT_DATA_DIR does not exist: ", data_root, call. = FALSE)
@@ -132,6 +133,16 @@ if (length(missing_inputs)) {
     call. = FALSE
   )
 }
+artifact_provenance <- ccle_artifact_provenance(
+  input_files,
+  c(
+    script_file,
+    file.path(script_dir, "ccle-typeI-synthY-30targets.R"),
+    file.path(script_dir, "matched-calibration-utils.R"),
+    file.path(script_dir, "validation-utils.R"),
+    file.path(package_root, "renv.lock")
+  )
+)
 
 mutations <- read.delim(file.path(in_dir, "mutation.txt"), sep = "\t")
 mutations <- mutations[grep("_MUT$", mutations$Name), ]
@@ -685,6 +696,9 @@ validate_record <- function(rec, setup_idx, path) {
       anyNA(versions) || any(!nzchar(versions))) {
     stop("Missing package-version provenance in ", path, call. = FALSE)
   }
+  ccle_validate_input_provenance(
+    rec$artifact_provenance, artifact_provenance$input_md5, path
+  )
   if (!identical(names(rec$rejection_rate), EXPECTED_METHODS) ||
       !identical(names(rec$na_rate), EXPECTED_METHODS) ||
       any(!is.finite(rec$rejection_rate)) ||
@@ -1195,6 +1209,17 @@ combined <- list(
   statistics = EXPECTED_STATISTICS,
   method_definition = reference_definition,
   package_versions = reference_versions,
+  artifact_provenance = c(
+    artifact_provenance,
+    list(
+      setup_md5 = setNames(unname(tools::md5sum(expected_files)),
+                           basename(expected_files)),
+      all_records_have_input_provenance = all(vapply(
+        results, function(record) !is.null(record$artifact_provenance),
+        logical(1L)
+      ))
+    )
+  ),
   summary_by_representative_effect_method = representative_summary,
   paired_gain_vs_delta0_by_representative_effect_method = paired_gain_df,
   null_summary_by_sparsity_method = null_summary_by_sparsity,

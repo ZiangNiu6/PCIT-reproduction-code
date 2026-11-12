@@ -36,14 +36,10 @@ if (length(script_arg) != 1L) {
 }
 script_dir <- normalizePath(dirname(sub("^--file=", "", script_arg)))
 source(file.path(script_dir, "matched-calibration-utils.R"))
-
-data_root <- Sys.getenv("LOCAL_PDRT_DATA_DIR", unset = "")
-if (!nzchar(data_root)) {
-  stop(
-    "LOCAL_PDRT_DATA_DIR must point to the external data/results directory.",
-    call. = FALSE
-  )
-}
+source(file.path(script_dir, "validation-utils.R"))
+source(file.path(script_dir, "..", "reproduction-helpers.R"))
+package_root <- reproduction_root(sub("^--file=", "", script_arg[[1L]]))
+data_root <- reproduction_results_root(package_root)
 data_root <- path.expand(data_root)
 if (!dir.exists(data_root)) {
   stop("LOCAL_PDRT_DATA_DIR does not exist: ", data_root, call. = FALSE)
@@ -100,6 +96,15 @@ if (length(missing_inputs)) {
     call. = FALSE
   )
 }
+artifact_provenance <- ccle_artifact_provenance(
+  input_files,
+  c(
+    normalizePath(sub("^--file=", "", script_arg[[1L]])),
+    file.path(script_dir, "matched-calibration-utils.R"),
+    file.path(script_dir, "validation-utils.R"),
+    file.path(package_root, "renv.lock")
+  )
+)
 
 mutations <- read.delim(file.path(in_dir, "mutation.txt"), sep = "\t")
 mutations <- mutations[grep("_MUT$", mutations$Name), ]
@@ -647,6 +652,7 @@ result <- list(
     )
   ),
   package_versions = package_versions,
+  artifact_provenance = artifact_provenance,
   rejection_rate = rej,
   na_rate        = na_rate
 )

@@ -5,7 +5,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
-PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd -P)"
+PACKAGE_ROOT="$(cd "$SCRIPT_DIR/.." && pwd -P)"
 
 sim_spec_dir="$SCRIPT_DIR/sim-spec-formal"
 results_dir=""
@@ -92,6 +92,18 @@ if [[ "$profile" != "local" && "$profile" != "standard" ]]; then
   echo "--profile must be local or standard." >&2
   exit 2
 fi
+if [[ "$sim_name" != nb-permutation-signflip && "$sim_name" != pcm-additive ]]; then
+  echo "Supported manuscript studies: nb-permutation-signflip and pcm-additive." >&2
+  exit 2
+fi
+if [[ ! "$B_check" =~ ^[1-9][0-9]*$ || ! "$B" =~ ^(0|[1-9][0-9]*)$ ||
+      ! "$max_gb" =~ ^[0-9]+([.][0-9]+)?$ ||
+      ! "$max_hours" =~ ^[0-9]+([.][0-9]+)?$ ||
+      ! "$benchmark_memory" =~ ^[01]$ ]] ||
+    ! awk -v gb="$max_gb" -v hours="$max_hours" 'BEGIN { exit !(gb > 0 && hours > 0) }'; then
+  echo "Invalid replication count, memory, wall time, or benchmark-memory option." >&2
+  exit 2
+fi
 if [[ ! -d "$sim_spec_dir" ]]; then
   echo "Simulation-specifier directory not found: $sim_spec_dir" >&2
   exit 2
@@ -109,35 +121,48 @@ if [[ ! -f "$grid_script" ]]; then
   exit 2
 fi
 
+source "$PACKAGE_ROOT/workflow-common.sh"
+pcit_initialize "$PACKAGE_ROOT"
+pcit_check_r
+
 mkdir -p "$results_dir"
 results_dir="$(cd "$results_dir" && pwd -P)"
 output_file="$results_dir/${sim_name}_results.rds"
 specifier_file="$results_dir/${sim_name}_specifier.rds"
 
+validate_result() {
+  if [[ "$sim_name" == nb-permutation-signflip ]]; then
+    PCIT_NB_RESULTS_FILE="$output_file" \
+      pcit_r "$SCRIPT_DIR/figure-code/plot-nb-permutation-signflip.R" \
+        "$output_file" "$grid_script" --validate-only
+  else
+    PCIT_PCM_RESULTS_FILE="$output_file" \
+      pcit_r "$SCRIPT_DIR/figure-code/plot-pcm-additive.R" --validate-only
+  fi
+}
+
 if [[ -f "$output_file" ]]; then
-  echo "Reusing existing simulation result: $output_file"
+  if ! validate_result; then
+    echo "Invalid existing simulation result: $output_file" >&2
+    echo "Review and move that file out of this namespace, or choose an empty --results_dir. It has not been overwritten." >&2
+    exit 1
+  fi
+  echo "Reusing validated simulation result: $output_file"
   exit 0
 fi
 
-export PCIT_PROJECT_ROOT="$PROJECT_ROOT"
-if [[ -z "${R_LIBS_USER:-}" ]]; then
-  R_LIBS_USER="$({
-    Rscript --vanilla -e '
-      renv::load(project = Sys.getenv("PCIT_PROJECT_ROOT"), quiet = TRUE)
-      cat(paste(.libPaths(), collapse = ":"))
-    '
-  })"
-  export R_LIBS_USER
+if ! command -v nextflow >/dev/null 2>&1; then
+  echo "Nextflow is required to compute missing simulation results. See reproduction-code/README.md." >&2
+  exit 1
 fi
 
+export PCIT_SIM_SPEC_SCRIPT="$sim_spec_script"
+export PCIT_SIM_SPECIFIER_FILE="$specifier_file"
 if [[ ! -f "$specifier_file" || \
       "$sim_spec_script" -nt "$specifier_file" || \
       "$grid_script" -nt "$specifier_file" ]]; then
   echo "Building simulatr specifier: $specifier_file"
-  export PCIT_SIM_SPEC_SCRIPT="$sim_spec_script"
-  export PCIT_SIM_SPECIFIER_FILE="$specifier_file"
-  Rscript --vanilla -e '
-    renv::load(project = Sys.getenv("PCIT_PROJECT_ROOT"), quiet = TRUE)
+  pcit_r -e '
     suppressPackageStartupMessages(library(simulatr))
     source(Sys.getenv("PCIT_SIM_SPEC_SCRIPT"))
     if (!exists("simulatr_spec", inherits = FALSE)) {
@@ -171,5 +196,27 @@ if [[ ! -f "$output_file" ]]; then
   echo "Simulation finished without producing $output_file" >&2
   exit 1
 fi
+
+validate_result
+export PCIT_SIMULATR_PIPELINE_REVISION_USED="$pipeline_revision"
+export PCIT_SIM_RESULT_DIR="$results_dir"
+pcit_r - <<'RS'
+result_dir <- Sys.getenv("PCIT_SIM_RESULT_DIR")
+sources <- c(Sys.getenv("PCIT_SIM_SPEC_SCRIPT"),
+             sub("[.]R$", "-grid.R", Sys.getenv("PCIT_SIM_SPEC_SCRIPT")))
+sources <- sources[file.exists(sources)]
+provenance <- list(
+  pipeline_revision = Sys.getenv("PCIT_SIMULATR_PIPELINE_REVISION_USED"),
+  source_md5 = tools::md5sum(sources),
+  lockfile_md5 = tools::md5sum(file.path(Sys.getenv("PCIT_REPRODUCTION_ROOT"), "renv.lock")),
+  session_info = utils::sessionInfo()
+)
+temporary <- tempfile(".provenance-", tmpdir = result_dir)
+saveRDS(provenance, temporary)
+if (!file.rename(temporary, file.path(result_dir, "reproduction-provenance.rds"))) {
+  unlink(temporary)
+  stop("Could not publish simulation provenance.")
+}
+RS
 
 echo "Saved simulation result: $output_file"

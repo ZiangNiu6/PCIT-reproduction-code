@@ -17,7 +17,7 @@
 # the repository-level plot-only workflow to combine and plot those results.
 #
 # Optional environment variables for --sge:
-#   PROJECT    SGE project (default: stat_bhaswar_team)
+#   PROJECT    optional SGE project/account
 #   MEM        m_mem_free request (default: 8G)
 #   N_SETUPS   number of setup indices to dispatch (default: 42)
 # For either mode, --force (or CCLE_FORCE_RERUN=1) explicitly reruns every
@@ -70,28 +70,16 @@ for option in "$@"; do
   esac
 done
 
-# Load the lab configuration when available. Required values are embedded
-# explicitly in each job script; the full login environment is not sent to
-# Grid Engine.
-if [[ -z "${LOCAL_PDRT_DATA_DIR:-}" && -f "$HOME/.research_config" ]]; then
-  # shellcheck disable=SC1090
-  source "$HOME/.research_config"
-fi
-
-if [[ -z "${LOCAL_PDRT_DATA_DIR:-}" ]]; then
-  echo "ERROR: LOCAL_PDRT_DATA_DIR is not set and was not loaded from ~/.research_config." >&2
-  exit 1
-fi
-
 script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
-project_root=$(cd -- "$script_dir/../.." && pwd)
+package_root=$(cd -- "$script_dir/.." && pwd)
+# shellcheck source=../workflow-common.sh
+source "$package_root/workflow-common.sh"
+pcit_initialize "$package_root"
+pcit_check_r
 runner="$script_dir/ccle-typeI-synthY-30targets.R"
 combiner="$script_dir/combine-ccle-results.R"
 
 data_root=$LOCAL_PDRT_DATA_DIR
-if [[ "$data_root" != /* ]]; then
-  data_root="$project_root/$data_root"
-fi
 if [[ "$data_root" != "/" ]]; then
   data_root=${data_root%/}
 fi
@@ -128,10 +116,9 @@ if ! command -v Rscript >/dev/null 2>&1; then
 fi
 rscript_bin=$(command -v Rscript)
 
-# Jobs run plain `Rscript` after `cd`-ing to the project root, so the renv
-# autoloader (project .Rprofile -> renv/activate.R) puts the project library on
-# the path automatically. Only the required data path is embedded in the job.
-echo "Project root:        $project_root"
+# Local and SGE workers use the same explicitly selected package library.
+# Only paths needed by each worker are embedded; no full environment export.
+echo "Package root:        $package_root"
 echo "Runner script:       $runner"
 echo "Result namespace:    matched-v4-representative-effect-grid-s10"
 echo "Number of setups:    $n_setups"
@@ -145,8 +132,8 @@ cleanup_status_file() {
 }
 trap cleanup_status_file EXIT
 
-cd "$project_root"
-"$rscript_bin" "$combiner" --output-status "$status_file" "$n_setups" \
+cd "$package_root"
+pcit_r "$combiner" --output-status "$status_file" "$n_setups" \
   >/dev/null
 
 pending_indices=()
@@ -228,7 +215,7 @@ if [[ "$mode" == "--local" ]]; then
   for setup_idx in "${pending_indices[@]}"; do
     ((pending_position += 1))
     echo "Running CCLE setup $setup_idx ($pending_position/$pending_count pending) ..."
-    "$rscript_bin" "$runner" "$setup_idx"
+    pcit_r "$runner" "$setup_idx"
   done
   if (( force_rerun )); then
     echo "Completed $pending_count explicitly forced CCLE setup(s)."
@@ -243,21 +230,21 @@ if ! command -v qsub >/dev/null 2>&1; then
   exit 1
 fi
 
-sge_project=${PROJECT:-stat_bhaswar_team}
+sge_project=${PROJECT:-}
 memory=${MEM:-8G}
-echo "SGE project:         $sge_project"
+echo "SGE project:         ${sge_project:-scheduler default}"
 echo "Memory per job:      $memory"
+sge_options=(-l "m_mem_free=$memory" -cwd)
+if [[ -n "$sge_project" ]]; then sge_options+=(-P "$sge_project"); fi
 
 for setup_idx in "${pending_indices[@]}"; do
   job_name="ccle_matched_v4_${setup_idx}"
   printf -v job_body \
-    '#!/usr/bin/env bash\nset -euo pipefail\nexport LOCAL_PDRT_DATA_DIR=%q\nexport RENV_CONFIG_SANDBOX_ENABLED=FALSE\nexport CCLE_FORCE_RERUN=%q\ncd -- %q\nexec %q %q %q\n' \
-    "$data_root" "$force_rerun" "$project_root" "$rscript_bin" "$runner" \
-    "$setup_idx"
+    '#!/usr/bin/env bash\nset -euo pipefail\nexport PATH=%q:"$PATH"\nexport LOCAL_PDRT_DATA_DIR=%q\nexport CCLE_FORCE_RERUN=%q\nexport PCIT_R_LIBRARY=%q\nsource %q\npcit_initialize %q\npcit_check_r\npcit_r %q %q\n' \
+    "$(dirname -- "$rscript_bin")" "$data_root" "$force_rerun" "${PCIT_R_LIBRARY:-}" \
+    "$package_root/workflow-common.sh" "$package_root" "$runner" "$setup_idx"
   printf '%s' "$job_body" | qsub \
-    -P "$sge_project" \
-    -l "m_mem_free=$memory" \
-    -cwd \
+    "${sge_options[@]}" \
     -N "$job_name"
 done
 
@@ -266,6 +253,6 @@ if (( force_rerun )); then
 else
   echo "Submitted $pending_count CCLE setup job(s); skipped $valid_count valid output(s)."
 fi
-echo "After they finish, run: ./run_all_semi_synthetic.sh plot-only"
-echo "If the matched-v4 combined result is absent, the root runner will"
-echo "strictly validate and combine all 42 matched-v4 setup files before plotting."
+echo "After they finish, combine explicitly: Rscript semi-synthetic-analysis/combine-ccle-results.R"
+echo "Then run: ./run_all_semi_synthetic.sh plot-only"
+echo "Plot-only uses an existing combined artifact without raw-data recombination."
