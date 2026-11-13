@@ -31,13 +31,42 @@ if [[ "$actual_sha256" != "$expected_sha256" ]]; then
   echo "Bundled pcmt source checksum mismatch; restore a clean copy of the archive." >&2
   exit 1
 fi
+# Rhdf5lib supplies HDF5 archives, but macOS still needs OpenSSL's library
+# directory when compiling ondisc. Discover it without personal Makevars.
+openssl_libdir=""
+if [[ "$(uname -s)" == Darwin ]]; then
+  openssl_libdir="${PCIT_OPENSSL_LIB_DIR:-}"
+  if [[ -n "$openssl_libdir" && ! -f "$openssl_libdir/libcrypto.dylib" && ! -f "$openssl_libdir/libcrypto.a" ]]; then
+    echo "PCIT_OPENSSL_LIB_DIR must contain libcrypto.dylib or libcrypto.a." >&2
+    exit 1
+  fi
+  if [[ -z "$openssl_libdir" ]] && command -v pkg-config >/dev/null 2>&1; then
+    for module in libcrypto openssl; do
+      candidate=$(pkg-config --variable=libdir "$module" 2>/dev/null || true)
+      if [[ -f "$candidate/libcrypto.dylib" || -f "$candidate/libcrypto.a" ]]; then
+        openssl_libdir="$candidate"; break
+      fi
+    done
+  fi
+  if [[ -z "$openssl_libdir" ]] && command -v brew >/dev/null 2>&1; then
+    candidate=$(brew --prefix openssl@3 2>/dev/null || true)
+    if [[ -f "$candidate/lib/libcrypto.dylib" || -f "$candidate/lib/libcrypto.a" ]]; then
+      openssl_libdir="$candidate/lib"
+    fi
+  fi
+  if [[ -n "$openssl_libdir" ]]; then
+    openssl_libdir="$(cd "$openssl_libdir" && pwd -P)"
+    export LIBRARY_PATH="$openssl_libdir${LIBRARY_PATH:+:$LIBRARY_PATH}"
+  fi
+fi
 export RENV_CONFIG_SANDBOX_ENABLED=FALSE
 export RENV_PROJECT="$package_root"
 export RENV_PATHS_CELLAR="$package_root/renv/cellar"
 # renv's cellar lookup uses the active project/cwd, including when restore()
 # receives an explicit project argument. Pin both so any caller cwd works.
 cd "$package_root"
-Rscript --vanilla - "$package_root" <<'RS'
+restore_status=0
+Rscript --vanilla - "$package_root" <<'RS' || restore_status=$?
 root <- normalizePath(commandArgs(TRUE)[[1L]], mustWork = TRUE)
 lock_lines <- readLines(file.path(root, "renv.lock"), warn = FALSE)
 record_start <- grep('^[[:space:]]*"renv"[[:space:]]*:[[:space:]]*\\{', lock_lines)
@@ -83,3 +112,9 @@ project_library <- renv::paths$library(project = root)
 dir.create(project_library, recursive = TRUE, showWarnings = FALSE)
 renv::restore(project = root, library = project_library, prompt = FALSE)
 RS
+if ((restore_status)); then
+  if [[ "$(uname -s)" == Darwin && -z "$openssl_libdir" ]]; then
+    echo "If ondisc could not link libcrypto, install OpenSSL (e.g. brew install openssl@3 pkg-config) or set PCIT_OPENSSL_LIB_DIR to its lib directory." >&2
+  fi
+  exit "$restore_status"
+fi

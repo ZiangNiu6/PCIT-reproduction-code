@@ -1,0 +1,396 @@
+{
+  "schema": "frangieh_q10_verified_adoption_manifest_v1",
+  "status": "complete",
+  "completed_utc": "2026-11-13T16:21:52Z",
+  "result_schema": "perturb_score5_v4_gb2024_q10",
+  "operating_q": 0.1,
+  "replicates": {
+    "rep001": {
+      "canonical": {
+        "file": "score_fdr_rep001.rds",
+        "bytes": 1037506,
+        "sha256": "e4f4596dc9eb2764b012e848bd6ef963c497413ddde490b9340726415dbe5280"
+      },
+      "original": {
+        "path": "/Users/ziangniu/Documents/Projects/PCIT/PCIT-project/results/frangieh-q10/score_fdr_q10_rep001.rds",
+        "bytes": 394819,
+        "sha256": "b677f54299733d52d77cbf316010169f4d9243f4f1983111c7a61af9ec116ec6"
+      },
+      "original_receipt_sha256": "66c49b0f95dad78cc6f12c3db8359464a614890df27ce648e5f2293f74a7d8e5",
+      "numeric_result_identical": true,
+      "serialized_result_sha256": "9ef2c3ae6311d32fcf431e546803b4498deab84d01aaeac22c8b5948583a5677",
+      "provenance_kind": "imported_verified_q10"
+    },
+    "rep002": {
+      "canonical": {
+        "file": "score_fdr_rep002.rds",
+        "bytes": 1037847,
+        "sha256": "0daf142c9eccc7dcf052f82efed835bc183e3532f01bac7362cf3e4645d2d33e"
+      },
+      "original": {
+        "path": "/Users/ziangniu/Documents/Projects/PCIT/PCIT-project/results/frangieh-q10/score_fdr_q10_rep002.rds",
+        "bytes": 394966,
+        "sha256": "ef7abf4fddc9cd8ef3ccc3813a2177c027aba7560170fcda927141432d96b1dc"
+      },
+      "original_receipt_sha256": "7071f1c4b029c71903c76b39144d382f53203293daefea1f69b52c2653f4f7b7",
+      "numeric_result_identical": true,
+      "serialized_result_sha256": "cceb8c97654686427bd9dc0686b8e7acb13fa8743f0da0a6e33c966ee7dac1aa",
+      "provenance_kind": "imported_verified_q10"
+    },
+    "rep003": {
+      "canonical": {
+        "file": "score_fdr_rep003.rds",
+        "bytes": 1037451,
+        "sha256": "d9d5e2a6dad2115680ede03a298cb669598b4c8160ca433e74e37da7531cd13e"
+      },
+      "original": {
+        "path": "/Users/ziangniu/Documents/Projects/PCIT/PCIT-project/results/frangieh-q10/score_fdr_q10_rep003.rds",
+        "bytes": 394857,
+        "sha256": "6e474b8c5af63d464f6547f6daa19fef4010f3c1d273f2719a9c3c834ac36bbb"
+      },
+      "original_receipt_sha256": "2177090b000b32b9c6ee544e8140471384e58afa9817522191655d613e7c386a",
+      "numeric_result_identical": true,
+      "serialized_result_sha256": "39341ca16758c41fb13d18ddbd9788a8159302c466ea2fc1d23de3c8e92a9bd0",
+      "provenance_kind": "imported_verified_q10"
+    },
+    "rep004": {
+      "canonical": {
+        "file": "score_fdr_rep004.rds",
+        "bytes": 1036260,
+        "sha256": "4c2951a521d2d5e6270ce046390fbad7172e6977232f63818dbc422c8bc7e988"
+      },
+      "original": {
+        "path": "/Users/ziangniu/Documents/Projects/PCIT/PCIT-project/results/frangieh-q10/score_fdr_q10_rep004.rds",
+        "bytes": 394170,
+        "sha256": "cc92ae01b899d896f75dcf7ffd9ff269722b7a31fb5c599a25fa22ed54821f13"
+      },
+      "original_receipt_sha256": "a550eac9a31af604842680e2058495071d3b999c9a183a6ea8e897f270942f09",
+      "numeric_result_identical": true,
+      "serialized_result_sha256": "8246ce9f36ec457aaa0faef1d2936fdea4d83b5930e38130053c0525d83e6131",
+      "provenance_kind": "imported_verified_q10"
+    },
+    "rep005": {
+      "canonical": {
+        "file": "score_fdr_rep005.rds",
+        "bytes": 1038526,
+        "sha256": "eaa3ea95c2ac784822e359478b059af3e189ebde09b448e713b9655311b85c0a"
+      },
+      "original": {
+        "path": "/Users/ziangniu/Documents/Projects/PCIT/PCIT-project/results/frangieh-q10/score_fdr_q10_rep005.rds",
+        "bytes": 395106,
+        "sha256": "44ddcec265bd6d7b799e4ea9265a53c5e91b18a04991be8232817326b83fe1eb"
+      },
+      "original_receipt_sha256": "c8b4f42b5df40c1a240ab74bafc9178028489d496a09fd786b5db5461956c7bf",
+      "numeric_result_identical": true,
+      "serialized_result_sha256": "2b7c2678eebaf0356b0422ac282f62c051b87b0c30abbcd7a285935399d17093",
+      "provenance_kind": "imported_verified_q10"
+    },
+    "rep006": {
+      "canonical": {
+        "file": "score_fdr_rep006.rds",
+        "bytes": 1037627,
+        "sha256": "691eb4c7522885f211591feb8e7752f69c0b86b5e19de95cb6ef510c88742288"
+      },
+      "original": {
+        "path": "/Users/ziangniu/Documents/Projects/PCIT/PCIT-project/results/frangieh-q10/score_fdr_q10_rep006.rds",
+        "bytes": 394910,
+        "sha256": "1b2da2b40b415980213959f124e456eb9d2ead11d6031886c739685516d24a4a"
+      },
+      "original_receipt_sha256": "90b7e9271f1fc8e4aca6298911916eb57458ae1229d56b3fafd4d11176d21602",
+      "numeric_result_identical": true,
+      "serialized_result_sha256": "537b2ebd7e303381a07ff28a8de286ddb913cf7fd5642667e0d68733ff4b33ae",
+      "provenance_kind": "imported_verified_q10"
+    },
+    "rep007": {
+      "canonical": {
+        "file": "score_fdr_rep007.rds",
+        "bytes": 1038029,
+        "sha256": "e22c56fa2d00d34069d2f3799e7cb2b5d2304660eeece7af73f4ddcd806bb958"
+      },
+      "original": {
+        "path": "/Users/ziangniu/Documents/Projects/PCIT/PCIT-project/results/frangieh-q10/score_fdr_q10_rep007.rds",
+        "bytes": 394997,
+        "sha256": "de603398af2c9a38f2f0aac4f20cdd036ba5401ee4994deaf37f3e491a21c6d1"
+      },
+      "original_receipt_sha256": "b976ed6188ec9d8bf4d623c667ba12fde8ff1cdd992d8fccca46705a6210d257",
+      "numeric_result_identical": true,
+      "serialized_result_sha256": "d550b091cac30a14b1fb0a13aa482c9f308cadf0aa5125886949b003a8187757",
+      "provenance_kind": "imported_verified_q10"
+    },
+    "rep008": {
+      "canonical": {
+        "file": "score_fdr_rep008.rds",
+        "bytes": 1037221,
+        "sha256": "09b3f3e9cf5dbc931c38fbaf390869794f0993cebe9a7b3071119e95e8a26a19"
+      },
+      "original": {
+        "path": "/Users/ziangniu/Documents/Projects/PCIT/PCIT-project/results/frangieh-q10/score_fdr_q10_rep008.rds",
+        "bytes": 394725,
+        "sha256": "2ec0e4e187d5bd6f2d9e3c725174562207be85dabc5940eb8d5a0fba75037f82"
+      },
+      "original_receipt_sha256": "2411d4c16c34a240bbc93772b211fa835f260d1ae62c97ac427c72cf46be24dc",
+      "numeric_result_identical": true,
+      "serialized_result_sha256": "919f3d25703aded0e2c8a4a5fef5c94f92e20814547fc3958cd9c21f001986a0",
+      "provenance_kind": "imported_verified_q10"
+    },
+    "rep009": {
+      "canonical": {
+        "file": "score_fdr_rep009.rds",
+        "bytes": 1038074,
+        "sha256": "0698a679277b2d03c2da8b5360848f15ad186cc09124729797b448e5ae7e4c5c"
+      },
+      "original": {
+        "path": "/Users/ziangniu/Documents/Projects/PCIT/PCIT-project/results/frangieh-q10/score_fdr_q10_rep009.rds",
+        "bytes": 394959,
+        "sha256": "81627b9aa994ee9064fbf6237784c2a5cff508ce7ef4a7a54471d274fec03c99"
+      },
+      "original_receipt_sha256": "65266f556a1086d7db653b8f15b9a5797dcdfe2f8f532aaea98f7be91886b958",
+      "numeric_result_identical": true,
+      "serialized_result_sha256": "8336b083267ef4cd6009759130e4e6d50171f97d75bbbdb577eb69dc0f2ee278",
+      "provenance_kind": "imported_verified_q10"
+    },
+    "rep010": {
+      "canonical": {
+        "file": "score_fdr_rep010.rds",
+        "bytes": 1036870,
+        "sha256": "0b87f5fc23b8e4a20448ee153c8ce1afa6b78f0f2b7192d8a01bdea46ae49e3f"
+      },
+      "original": {
+        "path": "/Users/ziangniu/Documents/Projects/PCIT/PCIT-project/results/frangieh-q10/score_fdr_q10_rep010.rds",
+        "bytes": 394557,
+        "sha256": "9af7e1ec99f00efbff3980c3df582d1da5db3e2717a6705a2e5e3733bbb56798"
+      },
+      "original_receipt_sha256": "ad8226becb4e63adce8c9bf0e5ee888e9f00123709344b2901b0f88b4a8670af",
+      "numeric_result_identical": true,
+      "serialized_result_sha256": "f157b8ebfc06fb829f0a9a3d5a1b96d52bfae20b44d8d60c4fe774ba426f1932",
+      "provenance_kind": "imported_verified_q10"
+    },
+    "rep011": {
+      "canonical": {
+        "file": "score_fdr_rep011.rds",
+        "bytes": 1037152,
+        "sha256": "7ac4e1aec605be74860db079613d776752cfca265eaf10da5210075ef38abfa5"
+      },
+      "original": {
+        "path": "/Users/ziangniu/Documents/Projects/PCIT/PCIT-project/results/frangieh-q10/score_fdr_q10_rep011.rds",
+        "bytes": 394753,
+        "sha256": "6d93a58262f8a0bb2800216fbf87343255290e8255dacee9c9d07dd164f7a20b"
+      },
+      "original_receipt_sha256": "5c33b4e1b9a3f85e4efbe445e47b90500570d5c5f8cd8cc3b714709e1fb475dd",
+      "numeric_result_identical": true,
+      "serialized_result_sha256": "9f1e96f8d8d8735f4f6084c096bd747112f58de6526eed678060bd464365b9e2",
+      "provenance_kind": "imported_verified_q10"
+    },
+    "rep012": {
+      "canonical": {
+        "file": "score_fdr_rep012.rds",
+        "bytes": 1037464,
+        "sha256": "b06350eb9944f286abec58492c093edb6e70edfca4027171fa6ed2ab4c2bd4e4"
+      },
+      "original": {
+        "path": "/Users/ziangniu/Documents/Projects/PCIT/PCIT-project/results/frangieh-q10/score_fdr_q10_rep012.rds",
+        "bytes": 394864,
+        "sha256": "2cf4a6c8d13647280fb529c84a675c1b9b829b37c8e033c001167badfdb96972"
+      },
+      "original_receipt_sha256": "bc9a549d9bda800a600c359ea4836ed8e64750c05ff890f62c94cdaad9ae0c9b",
+      "numeric_result_identical": true,
+      "serialized_result_sha256": "6465c73033c53bf55ef4743b55304f6709f1752b0e1ff2139552831b17b72b19",
+      "provenance_kind": "imported_verified_q10"
+    },
+    "rep013": {
+      "canonical": {
+        "file": "score_fdr_rep013.rds",
+        "bytes": 1039457,
+        "sha256": "7b626a701d3c6101b7e7e7eae0c5b2130ec8a3076dafb3e19c636a4f4a59db9e"
+      },
+      "original": {
+        "path": "/Users/ziangniu/Documents/Projects/PCIT/PCIT-project/results/frangieh-q10/score_fdr_q10_rep013.rds",
+        "bytes": 395483,
+        "sha256": "b69506cdb1e2c6c829bd4670c059dc021155ffb8c5726a748fe8b48c5243ad52"
+      },
+      "original_receipt_sha256": "5e6c2e57d07b07000ad5ca855e2ce7d590054a3146a0a6fb58866692d79482e4",
+      "numeric_result_identical": true,
+      "serialized_result_sha256": "20c27f91ec51c536db9e8019d81fbf9275774606e1e83e5c2d87da1189f1e816",
+      "provenance_kind": "imported_verified_q10"
+    },
+    "rep014": {
+      "canonical": {
+        "file": "score_fdr_rep014.rds",
+        "bytes": 1037056,
+        "sha256": "9463120f52716b1ad46a9886b717a8e77d2e9ead17865274eec87017022001bf"
+      },
+      "original": {
+        "path": "/Users/ziangniu/Documents/Projects/PCIT/PCIT-project/results/frangieh-q10/score_fdr_q10_rep014.rds",
+        "bytes": 394673,
+        "sha256": "a5e78394285fc7229071f201184fec884658e3145e5fba1ab22e89310aa9b4fc"
+      },
+      "original_receipt_sha256": "0d8909702fdef43bc4447a30c8fdc59dc65396fbe29c356048bd0acbf0fe4d3a",
+      "numeric_result_identical": true,
+      "serialized_result_sha256": "9695b1fb1aad2c6e236510badfa009535a3f6392bb53cadf9c3f35e0f7f8e198",
+      "provenance_kind": "imported_verified_q10"
+    },
+    "rep015": {
+      "canonical": {
+        "file": "score_fdr_rep015.rds",
+        "bytes": 1037941,
+        "sha256": "21ee6dd77d6d097414398cffe2c8b923af5d9cae61daefcf2febfbac019a2728"
+      },
+      "original": {
+        "path": "/Users/ziangniu/Documents/Projects/PCIT/PCIT-project/results/frangieh-q10/score_fdr_q10_rep015.rds",
+        "bytes": 395017,
+        "sha256": "3c6e747e52adac0af82074bfcc6177516c04ccd96c150a7d98a41e89eba4914a"
+      },
+      "original_receipt_sha256": "418d83a23382aeca2a01f5793616f8a61559f70735c73f70659048430b35ca10",
+      "numeric_result_identical": true,
+      "serialized_result_sha256": "07b634125ce5d1cd0cd49a52b54aced586a5be8f6fd2f686ddd1071ec68cd7c1",
+      "provenance_kind": "imported_verified_q10"
+    },
+    "rep016": {
+      "canonical": {
+        "file": "score_fdr_rep016.rds",
+        "bytes": 1036815,
+        "sha256": "f8596af3c19a7249e7771ac674798d2c5163e7a43b25cf2288db7737602014ff"
+      },
+      "original": {
+        "path": "/Users/ziangniu/Documents/Projects/PCIT/PCIT-project/results/frangieh-q10/score_fdr_q10_rep016.rds",
+        "bytes": 394511,
+        "sha256": "c07d45aac651a1f16a6df945e2d542f9356c71f48f337294505de5764bb4d9a6"
+      },
+      "original_receipt_sha256": "d743ccac8083128edaa008938f4f9d0927a0d6507491382d67063dd0091855bb",
+      "numeric_result_identical": true,
+      "serialized_result_sha256": "1a40d0e78193af146afde718c43567ff04f4b051f53e1c5c74b3a4d0eec3ac60",
+      "provenance_kind": "imported_verified_q10"
+    },
+    "rep017": {
+      "canonical": {
+        "file": "score_fdr_rep017.rds",
+        "bytes": 1037928,
+        "sha256": "e2c2dc559b4e225835d576dc011a8535115681c1f8eaf3b8e226ae6e9e2f8351"
+      },
+      "original": {
+        "path": "/Users/ziangniu/Documents/Projects/PCIT/PCIT-project/results/frangieh-q10/score_fdr_q10_rep017.rds",
+        "bytes": 394975,
+        "sha256": "c23770903516a2735ca37f85cdcdb38b1369a934f1b701d02265c64b9b7a114b"
+      },
+      "original_receipt_sha256": "6c879c9cc991cdfd44d40bc3e14e56789999a7c38edce08063c6c74248854e2c",
+      "numeric_result_identical": true,
+      "serialized_result_sha256": "cf8674ac90918f2cbcdd312156a96de28ea517aa6b7a715c062100a0471a682c",
+      "provenance_kind": "imported_verified_q10"
+    },
+    "rep018": {
+      "canonical": {
+        "file": "score_fdr_rep018.rds",
+        "bytes": 1040154,
+        "sha256": "aaf9aeade6b9c2bb58e2ea461a7eea24f127e10e7a913d58e18651c6c4f5ebc3"
+      },
+      "original": {
+        "path": "/Users/ziangniu/Documents/Projects/PCIT/PCIT-project/results/frangieh-q10/score_fdr_q10_rep018.rds",
+        "bytes": 395776,
+        "sha256": "075fd2871e370514f4c5cdce69d9b1053aaa8442c21dd6c268ef32528b02d736"
+      },
+      "original_receipt_sha256": "3f753c564f547f012b3d71f3c8111065d21d9cc835cb5bf8cf6cd3c68a1b379b",
+      "numeric_result_identical": true,
+      "serialized_result_sha256": "09599da99a5b23b2e881cc609864867aea93bc4a04c26e505b9dd2cad0e4d3b4",
+      "provenance_kind": "imported_verified_q10"
+    },
+    "rep019": {
+      "canonical": {
+        "file": "score_fdr_rep019.rds",
+        "bytes": 1038336,
+        "sha256": "535426ed1b9663c50f91872e992cab6bce601d2b72f41e5a121420f2b813b6ab"
+      },
+      "original": {
+        "path": "/Users/ziangniu/Documents/Projects/PCIT/PCIT-project/results/frangieh-q10/score_fdr_q10_rep019.rds",
+        "bytes": 395071,
+        "sha256": "60bcac000b06cbd9f6580d6cd42fe874005bfcff360545a40467adfcd7ea0d37"
+      },
+      "original_receipt_sha256": "6b16e5a9e8949a82b6250d6f1ddb27196e60a37c2488877129de8df54f200b64",
+      "numeric_result_identical": true,
+      "serialized_result_sha256": "49be9ed6d9cedd404b509e23660c549cdc9aa60c63720717617b651831a61299",
+      "provenance_kind": "imported_verified_q10"
+    },
+    "rep020": {
+      "canonical": {
+        "file": "score_fdr_rep020.rds",
+        "bytes": 1037133,
+        "sha256": "d41cc5a348b4dfb7000d8704c5fb45d9e7b96f41eb2b5cebd732e21ed21b682d"
+      },
+      "original": {
+        "path": "/Users/ziangniu/Documents/Projects/PCIT/PCIT-project/results/frangieh-q10/score_fdr_q10_rep020.rds",
+        "bytes": 394705,
+        "sha256": "37a2a71cbb10bc016ecb7b9c7f0e4877f7a2816a076ce0ef706f8de23649e0a4"
+      },
+      "original_receipt_sha256": "1f26268729f252f70b9d58c1d4ce5e847502ad3786a0607a307d6ce59082591c",
+      "numeric_result_identical": true,
+      "serialized_result_sha256": "c2d28eba348758dc910db3f06a8f19d68ad11b4de70a91b211ea4534ce0c869f",
+      "provenance_kind": "imported_verified_q10"
+    }
+  },
+  "adoption_script": {
+    "path": "/Users/ziangniu/Documents/Projects/PCIT/PCIT-project/development-code/real-data-analysis/adopt-frangieh-q10.R",
+    "bytes": 10857,
+    "sha256": "f15b3983192754d6dc3d41432b308ffa29c8645777862daf6af0b02ad636ed95"
+  },
+  "current_generation": "generation-20261113162010-98762",
+  "current_preprocessing_contract_sha256": "ec6929017e45fbcb05f40e107bac32a7d74db2493e2455b2546f5a82e039bb52",
+  "scientific_input_equality": {
+    "subsetted_ODM.rds": {
+      "identical_R_object": true,
+      "previous_sha256": "6fde017f94bafc8adcf8ba3288a3e6f0cef20143b32ca785631ea2f6cf349693",
+      "current_sha256": "6fde017f94bafc8adcf8ba3288a3e6f0cef20143b32ca785631ea2f6cf349693"
+    },
+    "covariate_matrix.rds": {
+      "identical_R_object": true,
+      "previous_sha256": "7d59f96f176b05afa896a293c9db60380f3f4ea12444bad526bda116033fe930",
+      "current_sha256": "7d59f96f176b05afa896a293c9db60380f3f4ea12444bad526bda116033fe930"
+    },
+    "negative_control_pairs.rds": {
+      "identical_R_object": true,
+      "previous_sha256": "8fce49c091337953fa9d970c811ca17d3d30f54915272b2096dc8e27af8369a4",
+      "current_sha256": "8fce49c091337953fa9d970c811ca17d3d30f54915272b2096dc8e27af8369a4"
+    },
+    "positive_control_pairs.rds": {
+      "identical_R_object": true,
+      "previous_sha256": "de4ef65456dfaea8480ae85e5bea37fcb1a389217de0e3e4a6710f4d64b8766d",
+      "current_sha256": "de4ef65456dfaea8480ae85e5bea37fcb1a389217de0e3e4a6710f4d64b8766d"
+    },
+    "gene_list.rds": {
+      "identical_R_object": true,
+      "previous_sha256": "49c506561dc927ba5c12ffcba5d8bd4b58c0813b39f84265ff5e1c3b8b67dc46",
+      "current_sha256": "49c506561dc927ba5c12ffcba5d8bd4b58c0813b39f84265ff5e1c3b8b67dc46"
+    },
+    "null_splits.rds": {
+      "identical_R_object": true,
+      "previous_sha256": "4e484eaa117ca8206386f68241db3ffdddd648eff04f089b83ca13a62f006324",
+      "current_sha256": "4e484eaa117ca8206386f68241db3ffdddd648eff04f089b83ca13a62f006324"
+    },
+    "nt_grna_assigned.rds": {
+      "identical_R_object": true,
+      "previous_sha256": "8a547941a981eeb4e0ed99f3ea9e93e51d3de314de0235e76e32183266eb14ec",
+      "current_sha256": "8a547941a981eeb4e0ed99f3ea9e93e51d3de314de0235e76e32183266eb14ec"
+    },
+    "has_any_nt.rds": {
+      "identical_R_object": true,
+      "previous_sha256": "2ed8b5f2a5e6e863225dc6c5bbc052ff62f635a5c3411cdf902923ec86dae954",
+      "current_sha256": "2ed8b5f2a5e6e863225dc6c5bbc052ff62f635a5c3411cdf902923ec86dae954"
+    },
+    "pure_nt.rds": {
+      "identical_R_object": true,
+      "previous_sha256": "2ed8b5f2a5e6e863225dc6c5bbc052ff62f635a5c3411cdf902923ec86dae954",
+      "current_sha256": "2ed8b5f2a5e6e863225dc6c5bbc052ff62f635a5c3411cdf902923ec86dae954"
+    },
+    "pos_cell_masks.rds": {
+      "identical_R_object": true,
+      "previous_sha256": "11beda01cf23542a74946945043193064a7949f7f0dc2b5e53f953059a0b2f43",
+      "current_sha256": "11beda01cf23542a74946945043193064a7949f7f0dc2b5e53f953059a0b2f43"
+    },
+    "preprocessing-contract.rds": {
+      "identical_R_object": true,
+      "previous_sha256": "ec6929017e45fbcb05f40e107bac32a7d74db2493e2455b2546f5a82e039bb52",
+      "current_sha256": "ec6929017e45fbcb05f40e107bac32a7d74db2493e2455b2546f5a82e039bb52"
+    }
+  },
+  "source_stage_manifest_sha256": "ee9659c18ace7e1529a49021e72250b3f5c9cde09233b791ccaf2f45a3116ce3",
+  "numerical_equality": "All 20 result objects, including pairs, p-values, rejection sets, K, stopping rounds and timings, are identical to selected original q=.10 executions",
+  "original_metadata_policy": "Archived only; validation uses embedded bytes and hashes and never requires old live result/source paths"
+}

@@ -21,8 +21,7 @@ ccle_same_ordered_frame <- function(actual, expected,
   }, logical(1L)))
 }
 
-# Additive provenance: historical canonical results remain valid without this
-# field; newly computed artifacts identify their exact raw inputs and code.
+# Record the inputs, analysis sources and runtime of a newly computed artifact.
 ccle_artifact_provenance <- function(input_files, code_files) {
   checksum <- function(paths) {
     if (any(!file.exists(paths))) {
@@ -40,18 +39,4 @@ ccle_artifact_provenance <- function(input_files, code_files) {
     code_md5 = checksum(code_files),
     session_info = utils::sessionInfo()
   )
-}
-
-ccle_validate_input_provenance <- function(provenance, expected_md5, context) {
-  if (is.null(provenance)) return(invisible(TRUE))
-  if (!is.list(provenance) ||
-      !identical(provenance$format_version, 1L) ||
-      !identical(provenance$hash_algorithm, "md5") ||
-      !is.character(provenance$input_md5) ||
-      !setequal(names(provenance$input_md5), names(expected_md5)) ||
-      !identical(provenance$input_md5[names(expected_md5)], expected_md5)) {
-    stop("Recorded input checksums disagree with the current CCLE inputs: ",
-         context, call. = FALSE)
-  }
-  invisible(TRUE)
 }

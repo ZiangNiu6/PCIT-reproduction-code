@@ -35,12 +35,37 @@ pcit_initialize() {
   export R_PROFILE_USER="$package_dir/.Rprofile"
 }
 
+pcit_require_fresh_directory() {
+  local directory="${1:?A fresh output directory is required}"
+  shift
+  mkdir -p -- "$directory" || return 1
+  local entry name allowed_name allowed
+  while IFS= read -r -d '' entry; do
+    name="${entry##*/}"
+    allowed=0
+    for allowed_name in "$@"; do
+      if [[ "$name" == "$allowed_name" && -f "$entry" ]]; then allowed=1; break; fi
+    done
+    if ((allowed == 0)); then
+      echo "Full computation requires a fresh output directory: $directory" >&2
+      echo "Existing entry: $name. Choose a new output directory; use plot-only for saved results." >&2
+      return 1
+    fi
+  done < <(find "$directory" -mindepth 1 -maxdepth 1 -print0)
+  # Leave the claim in place after success or failure. Full runs never resume.
+  if ! mkdir -- "$directory/.full-run-started"; then
+    echo "Full computation has already started in $directory. Choose a new output directory." >&2
+    return 1
+  fi
+}
+
 pcit_check_r() {
   if ! command -v Rscript >/dev/null 2>&1; then
     echo "Rscript is required (the pinned R version is 4.4.1)." >&2
     return 1
   fi
   if [[ -n "${PCIT_R_LIBRARY:-}" ]]; then
+    [[ "$PCIT_R_LIBRARY" == /* ]] || export PCIT_R_LIBRARY="$PCIT_REPRODUCTION_ROOT/$PCIT_R_LIBRARY"
     if [[ ! -d "$PCIT_R_LIBRARY" ]]; then echo "R library not found: $PCIT_R_LIBRARY" >&2; return 1; fi
     export R_LIBS_USER="$PCIT_R_LIBRARY${R_LIBS_USER:+:$R_LIBS_USER}"
   else

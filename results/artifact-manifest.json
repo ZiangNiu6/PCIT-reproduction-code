@@ -26,124 +26,130 @@
       "source": "existing publication analysis artifact; copied without modification"
     },
     {
-      "path": "results/frangieh-2021/score-calibration-nonpositive-nulls/score_fdr_rep001.rds",
-      "bytes": 148570,
-      "sha256": "facf7eafa31221ed6b15015a45c6f110e2f2160650530804826d21a1751dc826",
-      "source": "existing publication analysis artifact; copied without modification"
+      "path": "results/frangieh-2021/score-calibration-gb2024-q10/score_fdr_rep001.rds",
+      "bytes": 1037506,
+      "sha256": "e4f4596dc9eb2764b012e848bd6ef963c497413ddde490b9340726415dbe5280",
+      "source": "Imported from verified q=0.10 adaptive executions; numerical result object preserved without modification. See results/frangieh-2021/score-calibration-gb2024-q10/provenance/adoption-manifest.json."
     },
     {
-      "path": "results/frangieh-2021/score-calibration-nonpositive-nulls/score_fdr_rep002.rds",
-      "bytes": 148848,
-      "sha256": "d38d2b5ed7b0c457ebf32575cce42e3c6751d138004e139ea7e101248429ca38",
-      "source": "existing publication analysis artifact; copied without modification"
+      "path": "results/frangieh-2021/score-calibration-gb2024-q10/score_fdr_rep002.rds",
+      "bytes": 1037847,
+      "sha256": "0daf142c9eccc7dcf052f82efed835bc183e3532f01bac7362cf3e4645d2d33e",
+      "source": "Imported from verified q=0.10 adaptive executions; numerical result object preserved without modification. See results/frangieh-2021/score-calibration-gb2024-q10/provenance/adoption-manifest.json."
     },
     {
-      "path": "results/frangieh-2021/score-calibration-nonpositive-nulls/score_fdr_rep003.rds",
-      "bytes": 147869,
-      "sha256": "2327bbeeadd60587d46d3ff17c6994be485dacfa207eebe52809bd15ba591b60",
-      "source": "existing publication analysis artifact; copied without modification"
+      "path": "results/frangieh-2021/score-calibration-gb2024-q10/score_fdr_rep003.rds",
+      "bytes": 1037451,
+      "sha256": "d9d5e2a6dad2115680ede03a298cb669598b4c8160ca433e74e37da7531cd13e",
+      "source": "Imported from verified q=0.10 adaptive executions; numerical result object preserved without modification. See results/frangieh-2021/score-calibration-gb2024-q10/provenance/adoption-manifest.json."
     },
     {
-      "path": "results/frangieh-2021/score-calibration-nonpositive-nulls/score_fdr_rep004.rds",
-      "bytes": 148396,
-      "sha256": "45eea6e17822d68403307f7d57dac5355db92a745d7c323dc62c226e0ac0f35a",
-      "source": "existing publication analysis artifact; copied without modification"
+      "path": "results/frangieh-2021/score-calibration-gb2024-q10/score_fdr_rep004.rds",
+      "bytes": 1036260,
+      "sha256": "4c2951a521d2d5e6270ce046390fbad7172e6977232f63818dbc422c8bc7e988",
+      "source": "Imported from verified q=0.10 adaptive executions; numerical result object preserved without modification. See results/frangieh-2021/score-calibration-gb2024-q10/provenance/adoption-manifest.json."
     },
     {
-      "path": "results/frangieh-2021/score-calibration-nonpositive-nulls/score_fdr_rep005.rds",
-      "bytes": 148187,
-      "sha256": "b8e4cb72f953a5f3deb437bca384150774b696103b3dd2d24c3ded709c2956c4",
-      "source": "existing publication analysis artifact; copied without modification"
+      "path": "results/frangieh-2021/score-calibration-gb2024-q10/score_fdr_rep005.rds",
+      "bytes": 1038526,
+      "sha256": "eaa3ea95c2ac784822e359478b059af3e189ebde09b448e713b9655311b85c0a",
+      "source": "Imported from verified q=0.10 adaptive executions; numerical result object preserved without modification. See results/frangieh-2021/score-calibration-gb2024-q10/provenance/adoption-manifest.json."
     },
     {
-      "path": "results/frangieh-2021/score-calibration-nonpositive-nulls/score_fdr_rep006.rds",
-      "bytes": 148639,
-      "sha256": "9021e7f4ddbacd4394263112d243d5a6c5f017039faedf7105d65137105a407c",
-      "source": "existing publication analysis artifact; copied without modification"
+      "path": "results/frangieh-2021/score-calibration-gb2024-q10/score_fdr_rep006.rds",
+      "bytes": 1037627,
+      "sha256": "691eb4c7522885f211591feb8e7752f69c0b86b5e19de95cb6ef510c88742288",
+      "source": "Imported from verified q=0.10 adaptive executions; numerical result object preserved without modification. See results/frangieh-2021/score-calibration-gb2024-q10/provenance/adoption-manifest.json."
     },
     {
-      "path": "results/frangieh-2021/score-calibration-nonpositive-nulls/score_fdr_rep007.rds",
-      "bytes": 148432,
-      "sha256": "280b2c03be0d2f7b9e91275c56db8f5a601dac716f1f5fcbfb57bb7bddf810cc",
-      "source": "existing publication analysis artifact; copied without modification"
+      "path": "results/frangieh-2021/score-calibration-gb2024-q10/score_fdr_rep007.rds",
+      "bytes": 1038029,
+      "sha256": "e22c56fa2d00d34069d2f3799e7cb2b5d2304660eeece7af73f4ddcd806bb958",
+      "source": "Imported from verified q=0.10 adaptive executions; numerical result object preserved without modification. See results/frangieh-2021/score-calibration-gb2024-q10/provenance/adoption-manifest.json."
     },
     {
-      "path": "results/frangieh-2021/score-calibration-nonpositive-nulls/score_fdr_rep008.rds",
-      "bytes": 148790,
-      "sha256": "1cae334e987b1c8ea7d0033da127db885304772e4c2d1acc0c237205ab284195",
-      "source": "existing publication analysis artifact; copied without modification"
+      "path": "results/frangieh-2021/score-calibration-gb2024-q10/score_fdr_rep008.rds",
+      "bytes": 1037221,
+      "sha256": "09b3f3e9cf5dbc931c38fbaf390869794f0993cebe9a7b3071119e95e8a26a19",
+      "source": "Imported from verified q=0.10 adaptive executions; numerical result object preserved without modification. See results/frangieh-2021/score-calibration-gb2024-q10/provenance/adoption-manifest.json."
     },
     {
-      "path": "results/frangieh-2021/score-calibration-nonpositive-nulls/score_fdr_rep009.rds",
-      "bytes": 148678,
-      "sha256": "85a260b66b5015a55dcbb075ad49de160d3d4ebae11e4acbaf723c006142eb8e",
-      "source": "existing publication analysis artifact; copied without modification"
+      "path": "results/frangieh-2021/score-calibration-gb2024-q10/score_fdr_rep009.rds",
+      "bytes": 1038074,
+      "sha256": "0698a679277b2d03c2da8b5360848f15ad186cc09124729797b448e5ae7e4c5c",
+      "source": "Imported from verified q=0.10 adaptive executions; numerical result object preserved without modification. See results/frangieh-2021/score-calibration-gb2024-q10/provenance/adoption-manifest.json."
     },
     {
-      "path": "results/frangieh-2021/score-calibration-nonpositive-nulls/score_fdr_rep010.rds",
-      "bytes": 148761,
-      "sha256": "7753ed2d630f8a9cfad2aac2ce9f2cbef5e1f7557dca0da20f740d335f1c5e45",
-      "source": "existing publication analysis artifact; copied without modification"
+      "path": "results/frangieh-2021/score-calibration-gb2024-q10/score_fdr_rep010.rds",
+      "bytes": 1036870,
+      "sha256": "0b87f5fc23b8e4a20448ee153c8ce1afa6b78f0f2b7192d8a01bdea46ae49e3f",
+      "source": "Imported from verified q=0.10 adaptive executions; numerical result object preserved without modification. See results/frangieh-2021/score-calibration-gb2024-q10/provenance/adoption-manifest.json."
     },
     {
-      "path": "results/frangieh-2021/score-calibration-nonpositive-nulls/score_fdr_rep011.rds",
-      "bytes": 147891,
-      "sha256": "b089445c1c2748662cbe9e46e950c73a5d8ae727f83072a14311a0e563099b49",
-      "source": "existing publication analysis artifact; copied without modification"
+      "path": "results/frangieh-2021/score-calibration-gb2024-q10/score_fdr_rep011.rds",
+      "bytes": 1037152,
+      "sha256": "7ac4e1aec605be74860db079613d776752cfca265eaf10da5210075ef38abfa5",
+      "source": "Imported from verified q=0.10 adaptive executions; numerical result object preserved without modification. See results/frangieh-2021/score-calibration-gb2024-q10/provenance/adoption-manifest.json."
     },
     {
-      "path": "results/frangieh-2021/score-calibration-nonpositive-nulls/score_fdr_rep012.rds",
-      "bytes": 149372,
-      "sha256": "a0fec353868261807991eee56256bc84819d44050e04af5cc51a2ccc0858618d",
-      "source": "existing publication analysis artifact; copied without modification"
+      "path": "results/frangieh-2021/score-calibration-gb2024-q10/score_fdr_rep012.rds",
+      "bytes": 1037464,
+      "sha256": "b06350eb9944f286abec58492c093edb6e70edfca4027171fa6ed2ab4c2bd4e4",
+      "source": "Imported from verified q=0.10 adaptive executions; numerical result object preserved without modification. See results/frangieh-2021/score-calibration-gb2024-q10/provenance/adoption-manifest.json."
     },
     {
-      "path": "results/frangieh-2021/score-calibration-nonpositive-nulls/score_fdr_rep013.rds",
-      "bytes": 148572,
-      "sha256": "f2473a85d8679566ef664b1e1e290c08b10be71197d01839da3d83800ed63ab5",
-      "source": "existing publication analysis artifact; copied without modification"
+      "path": "results/frangieh-2021/score-calibration-gb2024-q10/score_fdr_rep013.rds",
+      "bytes": 1039457,
+      "sha256": "7b626a701d3c6101b7e7e7eae0c5b2130ec8a3076dafb3e19c636a4f4a59db9e",
+      "source": "Imported from verified q=0.10 adaptive executions; numerical result object preserved without modification. See results/frangieh-2021/score-calibration-gb2024-q10/provenance/adoption-manifest.json."
     },
     {
-      "path": "results/frangieh-2021/score-calibration-nonpositive-nulls/score_fdr_rep014.rds",
-      "bytes": 149257,
-      "sha256": "0b458257ae923bee6d589832a0e02f13b23836eb6c7f788f5895e188719fdc1e",
-      "source": "existing publication analysis artifact; copied without modification"
+      "path": "results/frangieh-2021/score-calibration-gb2024-q10/score_fdr_rep014.rds",
+      "bytes": 1037056,
+      "sha256": "9463120f52716b1ad46a9886b717a8e77d2e9ead17865274eec87017022001bf",
+      "source": "Imported from verified q=0.10 adaptive executions; numerical result object preserved without modification. See results/frangieh-2021/score-calibration-gb2024-q10/provenance/adoption-manifest.json."
     },
     {
-      "path": "results/frangieh-2021/score-calibration-nonpositive-nulls/score_fdr_rep015.rds",
-      "bytes": 148844,
-      "sha256": "de11b2b4d8fd9e5b7664f2f34bd419a60b7f65e1ba0d3cfc8f9722173b206787",
-      "source": "existing publication analysis artifact; copied without modification"
+      "path": "results/frangieh-2021/score-calibration-gb2024-q10/score_fdr_rep015.rds",
+      "bytes": 1037941,
+      "sha256": "21ee6dd77d6d097414398cffe2c8b923af5d9cae61daefcf2febfbac019a2728",
+      "source": "Imported from verified q=0.10 adaptive executions; numerical result object preserved without modification. See results/frangieh-2021/score-calibration-gb2024-q10/provenance/adoption-manifest.json."
     },
     {
-      "path": "results/frangieh-2021/score-calibration-nonpositive-nulls/score_fdr_rep016.rds",
-      "bytes": 148109,
-      "sha256": "656903c579f129031b7a648c5fa0ea36756c0d6b3488ad608c2bbb2caad5083f",
-      "source": "existing publication analysis artifact; copied without modification"
+      "path": "results/frangieh-2021/score-calibration-gb2024-q10/score_fdr_rep016.rds",
+      "bytes": 1036815,
+      "sha256": "f8596af3c19a7249e7771ac674798d2c5163e7a43b25cf2288db7737602014ff",
+      "source": "Imported from verified q=0.10 adaptive executions; numerical result object preserved without modification. See results/frangieh-2021/score-calibration-gb2024-q10/provenance/adoption-manifest.json."
     },
     {
-      "path": "results/frangieh-2021/score-calibration-nonpositive-nulls/score_fdr_rep017.rds",
-      "bytes": 147633,
-      "sha256": "c6eb18d94ed7db32db25648979b900b0fd286223ff3212fb4f82e632f38d1524",
-      "source": "existing publication analysis artifact; copied without modification"
+      "path": "results/frangieh-2021/score-calibration-gb2024-q10/score_fdr_rep017.rds",
+      "bytes": 1037928,
+      "sha256": "e2c2dc559b4e225835d576dc011a8535115681c1f8eaf3b8e226ae6e9e2f8351",
+      "source": "Imported from verified q=0.10 adaptive executions; numerical result object preserved without modification. See results/frangieh-2021/score-calibration-gb2024-q10/provenance/adoption-manifest.json."
     },
     {
-      "path": "results/frangieh-2021/score-calibration-nonpositive-nulls/score_fdr_rep018.rds",
-      "bytes": 148221,
-      "sha256": "144f7ebdc2e966471d22b5504f4aaff23a338064ec7ce4509e525fac98079149",
-      "source": "existing publication analysis artifact; copied without modification"
+      "path": "results/frangieh-2021/score-calibration-gb2024-q10/score_fdr_rep018.rds",
+      "bytes": 1040154,
+      "sha256": "aaf9aeade6b9c2bb58e2ea461a7eea24f127e10e7a913d58e18651c6c4f5ebc3",
+      "source": "Imported from verified q=0.10 adaptive executions; numerical result object preserved without modification. See results/frangieh-2021/score-calibration-gb2024-q10/provenance/adoption-manifest.json."
     },
     {
-      "path": "results/frangieh-2021/score-calibration-nonpositive-nulls/score_fdr_rep019.rds",
-      "bytes": 148224,
-      "sha256": "5101685dc760cdc424217a7f61e423abe1f209b52e5cf87905e42cbe9f481545",
-      "source": "existing publication analysis artifact; copied without modification"
+      "path": "results/frangieh-2021/score-calibration-gb2024-q10/score_fdr_rep019.rds",
+      "bytes": 1038336,
+      "sha256": "535426ed1b9663c50f91872e992cab6bce601d2b72f41e5a121420f2b813b6ab",
+      "source": "Imported from verified q=0.10 adaptive executions; numerical result object preserved without modification. See results/frangieh-2021/score-calibration-gb2024-q10/provenance/adoption-manifest.json."
     },
     {
-      "path": "results/frangieh-2021/score-calibration-nonpositive-nulls/score_fdr_rep020.rds",
-      "bytes": 148728,
-      "sha256": "db9e6053e7804c0e584735637547992aff83a6a3da65da8defaa4bbfc533cbd5",
-      "source": "existing publication analysis artifact; copied without modification"
+      "path": "results/frangieh-2021/score-calibration-gb2024-q10/score_fdr_rep020.rds",
+      "bytes": 1037133,
+      "sha256": "d41cc5a348b4dfb7000d8704c5fb45d9e7b96f41eb2b5cebd732e21ed21b682d",
+      "source": "Imported from verified q=0.10 adaptive executions; numerical result object preserved without modification. See results/frangieh-2021/score-calibration-gb2024-q10/provenance/adoption-manifest.json."
     }
-  ]
+  ],
+  "frangieh_selection": {
+    "result_schema": "perturb_score5_v4_gb2024_q10",
+    "q": 0.1,
+    "adoption_manifest": "results/frangieh-2021/score-calibration-gb2024-q10/provenance/adoption-manifest.json",
+    "adoption_manifest_sha256": "5a4d60716055462a3f1cfa6890c94ba5fee2132b9a2d2ab6164f4acad610b8e3"
+  }
 }

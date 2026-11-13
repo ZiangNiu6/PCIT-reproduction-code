@@ -16,8 +16,8 @@
 # The runner takes one CLI integer in 1..42. Setups 1:30 are the complete null
 # sweep in the old target order. Setups 31:42 are ordered by within-target grid
 # index, then EIF5A_MUT / PLK1_MUT / ATP11A_MUT. All effects for a target use
-# the old matched-v2 s=10 seed index, pairing their generated outcomes, splits,
-# permutation streams, and RF streams. Legacy files are left untouched:
+# the fixed target-specific s=10 seed index, pairing their generated outcomes, splits,
+# permutation streams, and RF streams:
 #
 #   $LOCAL_PDRT_DATA_DIR/ccle/
 #     ccle-typeI-synthY-30targets-matched-v4-results-{TARGET}-{EFFECT_ID}-s10.rds
@@ -192,10 +192,10 @@ effect_id_for_size <- function(effect_size) {
   EFFECT_LOOKUP$effect_id[idx]
 }
 
-## Preserve all 30 old s=10 null streams first. Then append nonzero effects in
+## Place all 30 s=10 null settings first. Then append nonzero effects in
 ## within-target grid-index-major order, with representatives displayed from
 ## high sparsity (rare) to low sparsity (common). Paired seed indices 31:60 are
-## target-specific and therefore identical to the matched-v2 null schedule.
+## target-specific and shared across the within-target effect grid.
 SETUPS_NULL <- transform(
   TARGETS_DF,
   grid_idx = 1L,
@@ -303,12 +303,6 @@ if (is.na(setup_idx) || setup_idx > N_SETUPS) {
        " (got: ", cli_args[[1L]], ")", call. = FALSE)
 }
 
-force_rerun_text <- Sys.getenv("CCLE_FORCE_RERUN", unset = "0")
-if (!force_rerun_text %in% c("0", "1")) {
-  stop("CCLE_FORCE_RERUN must be exactly 0 or 1", call. = FALSE)
-}
-force_rerun <- identical(force_rerun_text, "1")
-
 target <- SETUPS$target[setup_idx]
 tag    <- SETUPS$tag[setup_idx]
 s_j    <- as.integer(SETUPS$s[setup_idx])
@@ -323,19 +317,8 @@ paired_seed_idx <- as.integer(SETUPS$paired_seed_idx[setup_idx])
 out_file <- ccle_expected_output_path(setup_idx)
 
 if (file.exists(out_file)) {
-  if (force_rerun) {
-    cat("CCLE_FORCE_RERUN=1: replacing existing expected output:\n   ",
-        out_file, "\n", sep = "")
-  } else {
-    stop(
-      "Refusing to overwrite an output that exists at worker start: ",
-      out_file,
-      "\nThe submitter skips strictly validated outputs before dispatch. ",
-      "Review this race or direct invocation before setting ",
-      "CCLE_FORCE_RERUN=1.",
-      call. = FALSE
-    )
-  }
+  stop("Existing CCLE output: ", out_file,
+       ". Use a fresh result directory.", call. = FALSE)
 }
 
 stopifnot(target %in% mut_names)
@@ -663,7 +646,7 @@ tmp_file <- tempfile(
 )
 on.exit(unlink(tmp_file), add = TRUE)
 saveRDS(list(result), tmp_file)
-if (file.exists(out_file) && !force_rerun) {
+if (file.exists(out_file)) {
   stop(
     "Refusing to overwrite an output that appeared while setup ", setup_idx,
     " was running: ", out_file,

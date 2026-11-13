@@ -12,7 +12,6 @@ usage <- function() {
     "  --figure-dir DIR   Figure directory (default: <results-root>/figures-and-tables)\n",
     "  --results-root DIR Result directory (default: LOCAL_PDRT_DATA_DIR or package/results)\n",
     "  --verify-results   Verify the 24 canonical bundled RDS files against artifact-manifest.json\n",
-    "  --allow-legacy     Permit the eight legacy PDFs when neither v4 composite exists\n",
     "  --help             Show this help\n",
     "Explicit paths may be absolute or relative to the current working directory.\n",
     "--verify-results checks the released archive's identity; fresh numerical reruns may differ.\n",
@@ -27,12 +26,11 @@ if (identical(arguments, "--help")) {
 figure_argument <- NULL
 results_argument <- NULL
 verify_results <- FALSE
-allow_legacy <- FALSE
 seen <- character()
 while (length(arguments)) {
   option <- arguments[[1L]]
   arguments <- arguments[-1L]
-  if (!option %in% c("--figure-dir", "--results-root", "--verify-results", "--allow-legacy") ||
+  if (!option %in% c("--figure-dir", "--results-root", "--verify-results") ||
       option %in% seen) {
     stop("Unknown or repeated option: ", option, ". Use --help for usage.", call. = FALSE)
   }
@@ -47,8 +45,6 @@ while (length(arguments)) {
     if (option == "--figure-dir") figure_argument <- value else results_argument <- value
   } else if (option == "--verify-results") {
     verify_results <- TRUE
-  } else {
-    allow_legacy <- TRUE
   }
 }
 results_root <- if (is.null(results_argument)) {
@@ -60,7 +56,7 @@ figure_dir <- if (!is.null(figure_argument)) {
   file.path(results_root, "figures-and-tables")
 } else reproduction_figure_dir(package_root)
 
-baseline_figures <- c(
+core_figures <- c(
   "ccle-typeI-synthY-EIF5A-calibration.pdf",
   "illustrative-example-ci-misspecified.pdf",
   "nb-permutation-signflip-ci-focused-3x3.pdf",
@@ -74,10 +70,7 @@ v4_composites <- c(
   "ccle-typeI-synthY-intro-calibration-power.pdf",
   "ccle-typeI-synthY-30targets-typeI-power-combined.pdf"
 )
-expected_figures <- c(baseline_figures, v4_composites)
-if (allow_legacy && !any(file.exists(file.path(figure_dir, v4_composites)))) {
-  expected_figures <- baseline_figures
-}
+expected_figures <- c(core_figures, v4_composites)
 paths <- file.path(figure_dir, expected_figures)
 missing <- expected_figures[!file.exists(paths)]
 if (length(missing)) {
@@ -112,6 +105,7 @@ if (any(!is_pdf)) {
 }
 
 if (verify_results) {
+  source(file.path(package_root, "real-data-analysis", "method_config.R"))
   .libPaths(c(reproduction_library_paths(package_root), .libPaths()))
   required_packages <- c("jsonlite", "digest")
   missing_packages <- required_packages[
@@ -135,7 +129,8 @@ if (verify_results) {
     "results/simulation-results/nb-permutation-signflip-continuous-dispersion-estimated-theta/nb-permutation-signflip_results.rds",
     "results/simulation-results/pcm-additive-matched-dcrt/pcm-additive_results.rds",
     "results/ccle/ccle-typeI-synthY-30targets-matched-v4-results.rds",
-    sprintf("results/frangieh-2021/score-calibration-nonpositive-nulls/score_fdr_rep%03d.rds", 1:20)
+    sprintf("results/frangieh-2021/%s/score_fdr_rep%03d.rds",
+            PERTURB_RESULTS_SUBDIR, 1:20)
   )
   entries_valid <- vapply(manifest$artifacts, function(entry) {
     is.list(entry) && is.character(entry$path) && length(entry$path) == 1L &&
@@ -166,6 +161,16 @@ if (verify_results) {
     if (file.info(path)$size != entry$bytes ||
         !identical(tolower(actual_sha), tolower(entry$sha256))) {
       stop("Bundled result checksum/size mismatch: ", entry$path, call. = FALSE)
+    }
+    if (startsWith(entry$path,
+                   paste0("results/frangieh-2021/", PERTURB_RESULTS_SUBDIR, "/"))) {
+      object <- readRDS(path)
+      if (!is.list(object) || !is.list(object$config) ||
+          !identical(object$config$schema_version, PERTURB_SCHEMA_VERSION) ||
+          !identical(as.numeric(object$config$q_levels), PERTURB_Q_LEVELS)) {
+        stop("Bundled Frangieh result does not match the selected single-q schema: ",
+             entry$path, call. = FALSE)
+      }
     }
   }
   cat(sprintf("Verified SHA-256 and sizes of %d canonical bundled result files.\n",

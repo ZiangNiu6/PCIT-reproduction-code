@@ -1,0 +1,96 @@
+{
+  "root": "/Users/ziangniu/Documents/Projects/HPCC/data/external/frangieh-2021",
+  "published_archive": "https://zenodo.org/records/10976417/files/frangieh-2021-processed.zip?download=1",
+  "pinned_archive_md5": "1ad2adc53fde94fa17cad9ac6ebca006",
+  "whole_archive_md5_verified": false,
+  "central_directory_error": null,
+  "files": [
+    {
+      "path": "processed/control/gene/gene_expression_matrix.odm",
+      "bytes": 4263174451,
+      "sha256": "2126cddbbfe35ccebc8958eb30953178b6ea3e8ed5d0532aad6da9299538a0fd",
+      "crc32": "2ffa4d1b",
+      "stable_during_hash": true,
+      "public_zip_member": {
+        "bytes": 4263174451,
+        "crc32": "2ffa4d1b"
+      },
+      "matches_public_zip_member": true
+    },
+    {
+      "path": "processed/control/gene/gene_expression_metadata.rds",
+      "bytes": 2781994,
+      "sha256": "6e52dd47b15526ddd44a464cf48eafe93ce685f86ea1e2aaf3285aa6d3bcf3cc",
+      "crc32": "50c20877",
+      "stable_during_hash": true,
+      "public_zip_member": {
+        "bytes": 2781994,
+        "crc32": "50c20877"
+      },
+      "matches_public_zip_member": true
+    },
+    {
+      "path": "processed/control/grna_assignment/grna_assignments_ungrouped.odm",
+      "bytes": 910443,
+      "sha256": "6a4c754de101531fb4ee472703ca6427b2c95a76bd0a1d44ff33759e8aac890c",
+      "crc32": "42459fb9",
+      "stable_during_hash": true,
+      "public_zip_member": {
+        "bytes": 910443,
+        "crc32": "42459fb9"
+      },
+      "matches_public_zip_member": true
+    },
+    {
+      "path": "processed/control/grna_assignment/grna_assignments_ungrouped_metadata.rds",
+      "bytes": 336421,
+      "sha256": "5022e02c05e268b636f66ddfc03861a853aa5b7a24df957b39fd3ff71300e924",
+      "crc32": "d36a43b0",
+      "stable_during_hash": true,
+      "public_zip_member": {
+        "bytes": 336421,
+        "crc32": "d36a43b0"
+      },
+      "matches_public_zip_member": true
+    }
+  ],
+  "post_run_verification": {
+    "verified_at_utc": "2026-11-12T17:21:13Z",
+    "algorithm": "sha256",
+    "files_checked": 4,
+    "pass": true,
+    "all_files_stable_during_hash": true,
+    "baseline_receipt": "/private/tmp/pcit-frangieh-input-audit.json",
+    "files": [
+      {
+        "path": "processed/control/gene/gene_expression_matrix.odm",
+        "bytes": 4263174451,
+        "sha256": "2126cddbbfe35ccebc8958eb30953178b6ea3e8ed5d0532aad6da9299538a0fd",
+        "matches_pre_run_sha256_and_size": true,
+        "stable_during_hash": true
+      },
+      {
+        "path": "processed/control/gene/gene_expression_metadata.rds",
+        "bytes": 2781994,
+        "sha256": "6e52dd47b15526ddd44a464cf48eafe93ce685f86ea1e2aaf3285aa6d3bcf3cc",
+        "matches_pre_run_sha256_and_size": true,
+        "stable_during_hash": true
+      },
+      {
+        "path": "processed/control/grna_assignment/grna_assignments_ungrouped.odm",
+        "bytes": 910443,
+        "sha256": "6a4c754de101531fb4ee472703ca6427b2c95a76bd0a1d44ff33759e8aac890c",
+        "matches_pre_run_sha256_and_size": true,
+        "stable_during_hash": true
+      },
+      {
+        "path": "processed/control/grna_assignment/grna_assignments_ungrouped_metadata.rds",
+        "bytes": 336421,
+        "sha256": "5022e02c05e268b636f66ddfc03861a853aa5b7a24df957b39fd3ff71300e924",
+        "matches_pre_run_sha256_and_size": true,
+        "stable_during_hash": true
+      }
+    ],
+    "scope": "Post-run size/SHA-256 verification against the pre-run local audit; whole published archive MD5 remains unverified."
+  }
+}

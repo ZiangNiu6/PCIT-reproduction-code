@@ -75,36 +75,8 @@ EXPECTED_SEED_COMPONENT_OFFSETS <- c(
   pcm_RonZ_seed = 10L
 )
 
-cli_args <- commandArgs(trailingOnly = TRUE)
-status_mode <- FALSE
-status_path <- NULL
-status_indices <- integer()
-if (length(cli_args)) {
-  if (length(cli_args) != 3L ||
-      !identical(cli_args[[1L]], "--output-status")) {
-    stop(
-      "Usage: Rscript combine-ccle-results.R ",
-      "[--output-status <path> <n>]",
-      call. = FALSE
-    )
-  }
-  index_text <- cli_args[[3L]]
-  if (!grepl("^[1-9][0-9]*$", index_text)) {
-    stop("Status setup count/index must be a canonical integer in 1..42",
-         call. = FALSE)
-  }
-  index_value <- as.integer(index_text)
-  if (is.na(index_value) || index_value > 42L) {
-    stop("Status setup count/index must be a canonical integer in 1..42",
-         call. = FALSE)
-  }
-  status_mode <- TRUE
-  status_path <- path.expand(cli_args[[2L]])
-  if (!dir.exists(dirname(status_path))) {
-    stop("Status-output directory does not exist: ", dirname(status_path),
-         call. = FALSE)
-  }
-  status_indices <- seq_len(index_value)
+if (length(commandArgs(trailingOnly = TRUE))) {
+  stop("Usage: Rscript --vanilla combine-ccle-results.R", call. = FALSE)
 }
 
 script_arg <- grep("^--file=", commandArgs(FALSE), value = TRUE)
@@ -121,6 +93,13 @@ if (!dir.exists(data_root)) {
 }
 data_root <- normalizePath(data_root, mustWork = TRUE)
 bpath <- file.path(data_root, "ccle")
+combined_outputs <- file.path(bpath, c(
+  "ccle-typeI-synthY-30targets-matched-v4-results.rds",
+  "ccle-typeI-synthY-30targets-matched-v4-rejection-rates.csv"
+))
+if (any(file.exists(combined_outputs))) {
+  stop("Existing combined CCLE output; use a fresh directory.", call. = FALSE)
+}
 
 # ---- Re-derive expected (target, s) grid ----
 in_dir <- bpath
@@ -313,7 +292,7 @@ expected_files <- file.path(
   )
 )
 missing <- expected_files[!file.exists(expected_files)]
-if (length(missing) && !status_mode) {
+if (length(missing)) {
   stop(
     "Missing paired matched-calibration v4 per-setup files (", length(missing),
     " of ", length(expected_files), "):\n  ",
@@ -696,9 +675,6 @@ validate_record <- function(rec, setup_idx, path) {
       anyNA(versions) || any(!nzchar(versions))) {
     stop("Missing package-version provenance in ", path, call. = FALSE)
   }
-  ccle_validate_input_provenance(
-    rec$artifact_provenance, artifact_provenance$input_md5, path
-  )
   if (!identical(names(rec$rejection_rate), EXPECTED_METHODS) ||
       !identical(names(rec$na_rate), EXPECTED_METHODS) ||
       any(!is.finite(rec$rejection_rate)) ||
@@ -714,140 +690,6 @@ validate_record <- function(rec, setup_idx, path) {
          call. = FALSE)
   }
   invisible(TRUE)
-}
-
-if (status_mode) {
-  statuses <- lapply(status_indices, function(i) {
-    path <- expected_files[[i]]
-    if (!file.exists(path)) {
-      return(list(
-        state = "missing",
-        reason = "expected output is absent",
-        package_versions = NULL,
-        method_definition = NULL
-      ))
-    }
-    failure <- tryCatch({
-      obj <- readRDS(path)
-      if (!is.list(obj) || length(obj) != 1L || !is.list(obj[[1L]])) {
-        stop("Malformed per-setup result: ", path, call. = FALSE)
-      }
-      rec <- obj[[1L]]
-      validate_record(rec, i, path)
-      NULL
-    }, error = function(e) conditionMessage(e))
-    if (is.null(failure)) {
-      list(
-        state = "valid",
-        reason = "passed the strict per-record v4 validator",
-        package_versions = obj[[1L]]$package_versions,
-        method_definition = obj[[1L]]$method_definition
-      )
-    } else {
-      list(
-        state = "invalid",
-        reason = gsub("[\t\r\n]+", " ", failure),
-        package_versions = NULL,
-        method_definition = NULL
-      )
-    }
-  })
-
-  valid_indices <- which(vapply(
-    statuses, function(status) identical(status$state, "valid"), logical(1L)
-  ))
-  heterogeneous_versions <- FALSE
-  heterogeneous_definitions <- FALSE
-  if (length(valid_indices) > 1L) {
-    reference_versions <- statuses[[valid_indices[[1L]]]]$package_versions
-    reference_definition <- statuses[[valid_indices[[1L]]]]$method_definition
-    heterogeneous_versions <- !all(vapply(
-      valid_indices,
-      function(i) identical(statuses[[i]]$package_versions, reference_versions),
-      logical(1L)
-    ))
-    heterogeneous_definitions <- !all(vapply(
-      valid_indices,
-      function(i) identical(
-        statuses[[i]]$method_definition, reference_definition
-      ),
-      logical(1L)
-    ))
-  }
-  if (heterogeneous_versions || heterogeneous_definitions) {
-    heterogeneous_fields <- c(
-      if (heterogeneous_versions) "package_versions",
-      if (heterogeneous_definitions) "method_definition"
-    )
-    heterogeneity_reason <- paste0(
-      "selected individually valid records are heterogeneous in ",
-      paste(heterogeneous_fields, collapse = " and "),
-      "; all selected valid records are invalidated for a coherent rerun"
-    )
-    for (i in valid_indices) {
-      statuses[[i]]$state <- "invalid"
-      statuses[[i]]$reason <- heterogeneity_reason
-    }
-  }
-
-  ## A partial resume must not mix newly generated records with otherwise-valid
-  ## records from a different runtime. Fully complete, internally homogeneous
-  ## results remain eligible for the ordinary no-argument combiner.
-  if (any(vapply(
-        statuses, function(status) !identical(status$state, "valid"),
-        logical(1L)
-      ))) {
-    current_versions <- c(
-      R = R.version.string,
-      pcmt = as.character(utils::packageVersion("pcmt")),
-      comets = as.character(utils::packageVersion("comets")),
-      ranger = as.character(utils::packageVersion("ranger"))
-    )
-    for (i in seq_along(statuses)) {
-      if (identical(statuses[[i]]$state, "valid") &&
-          !identical(statuses[[i]]$package_versions, current_versions)) {
-        statuses[[i]]$state <- "invalid"
-        statuses[[i]]$reason <- paste0(
-          "package versions differ from the current runtime while selected ",
-          "outputs are incomplete (stored: ",
-          paste(
-            paste0(
-              names(statuses[[i]]$package_versions), "=",
-              statuses[[i]]$package_versions
-            ),
-            collapse = ", "
-          ),
-          "; current: ",
-          paste(
-            paste0(names(current_versions), "=", current_versions),
-            collapse = ", "
-          ),
-          ")"
-        )
-      }
-    }
-  }
-
-  status_rows <- do.call(rbind, lapply(seq_along(status_indices), function(j) {
-    i <- status_indices[[j]]
-    data.frame(
-      setup_idx = i,
-      state = statuses[[j]]$state,
-      filename = basename(expected_files[[i]]),
-      reason = statuses[[j]]$reason,
-      stringsAsFactors = FALSE
-    )
-  }))
-  write.table(
-    status_rows,
-    file = status_path,
-    sep = "\t",
-    quote = FALSE,
-    row.names = FALSE,
-    col.names = FALSE,
-    na = ""
-  )
-  quit(save = "no", status = 0L)
 }
 
 for (i in seq_along(expected_files)) {
@@ -1248,65 +1090,20 @@ saveRDS(combined, combined_tmp)
 write.csv(rej_df, rejection_tmp, row.names = FALSE)
 
 publish_pair <- function(rds_tmp, rds_path, csv_tmp, csv_path) {
-  output_paths <- c(rds_path, csv_path)
-  temp_paths <- c(rds_tmp, csv_tmp)
-  existed <- file.exists(output_paths)
-  backups <- rep(NA_character_, length(output_paths))
-
-  for (i in seq_along(output_paths)) {
-    if (existed[[i]]) {
-      backups[[i]] <- tempfile(
-        pattern = paste0(basename(output_paths[[i]]), ".backup-"),
-        tmpdir = dirname(output_paths[[i]])
-      )
-      if (!file.copy(output_paths[[i]], backups[[i]], overwrite = FALSE)) {
-        stop("Could not back up existing output before publication: ",
-             output_paths[[i]], call. = FALSE)
-      }
-    }
+  lock <- paste0(rds_path, ".publish-lock")
+  if (!dir.create(lock, showWarnings = FALSE)) {
+    stop("Another CCLE combiner is publishing: ", rds_path, call. = FALSE)
   }
-  backup_paths <- backups[!is.na(backups)]
-  on.exit(unlink(backup_paths, recursive = TRUE, force = TRUE), add = TRUE)
-
-  restore_prior_pair <- function() {
-    restored <- logical(length(output_paths))
-    for (i in seq_along(output_paths)) {
-      if (existed[[i]]) {
-        restored[[i]] <- file.copy(
-          backups[[i]], output_paths[[i]], overwrite = TRUE
-        )
-      } else {
-        unlink(output_paths[[i]], recursive = TRUE, force = TRUE)
-        restored[[i]] <- !file.exists(output_paths[[i]])
-      }
-    }
-    all(restored)
+  on.exit(unlink(lock, recursive = TRUE), add = TRUE)
+  if (any(file.exists(c(rds_path, csv_path)))) {
+    stop("Existing combined CCLE output; use a fresh directory.", call. = FALSE)
   }
-
-  if (!file.rename(temp_paths[[1L]], output_paths[[1L]])) {
-    stop("Failed to publish combined v4 RDS: ", output_paths[[1L]],
-         call. = FALSE)
+  if (!file.rename(rds_tmp, rds_path)) {
+    stop("Failed to publish combined CCLE RDS: ", rds_path, call. = FALSE)
   }
-
-  # This failure injection exists only to exercise rollback in isolated tests.
-  if (identical(
-        Sys.getenv("CCLE_COMBINER_TEST_FAIL_SECOND_PUBLISH", unset = "0"),
-        "1"
-      )) {
-    unlink(temp_paths[[2L]])
-  }
-
-  if (!file.rename(temp_paths[[2L]], output_paths[[2L]])) {
-    rollback_ok <- restore_prior_pair()
-    stop(
-      "Failed to publish v4 rejection CSV after publishing the RDS; ",
-      if (rollback_ok) {
-        "the prior output pair was restored."
-      } else {
-        "rollback was incomplete; inspect both output paths before reuse."
-      },
-      call. = FALSE
-    )
+  if (!file.rename(csv_tmp, csv_path)) {
+    unlink(rds_path)
+    stop("Failed to publish CCLE summary CSV; removed the new RDS.", call. = FALSE)
   }
   invisible(TRUE)
 }

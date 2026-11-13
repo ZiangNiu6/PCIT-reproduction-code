@@ -33,7 +33,7 @@ validate_rep <- function(obj, path, expected_rep = NULL, intermediate_dir = NULL
     schema_error(
       path, "schema_version is ", deparse(cfg$schema_version), "; expected ",
       deparse(PERTURB_SCHEMA_VERSION),
-      ". Do not mix legacy and corrected result files"
+      ". Only the current q = 0.10 schema is supported"
     )
   }
   if (!identical(cfg$method_levels, PERTURB_METHOD_LEVELS)) {
@@ -43,11 +43,30 @@ validate_rep <- function(obj, path, expected_rep = NULL, intermediate_dir = NULL
     "n_reps_max", "rep_idx", "seed", "n_pos", "n_null", "n_total",
     "median_size", "n_cells_full", "n_pure_nt", "q_levels", "h",
     "B_max", "alternative", "null_gene_policy", "null_gene_pool_size",
-    "null_gene_pool"
+    "null_gene_pool", "rng_layout", "RNGkind"
   )
   if (!all(required_config %in% names(cfg))) {
     schema_error(path, "config is missing: ",
                  paste(setdiff(required_config, names(cfg)), collapse = ", "))
+  }
+  {
+    required_gb <- c("preprocessing_policy", "preprocessing_contract", "covariate_names", "n_nt_exposure_guides")
+    if (!all(required_gb %in% names(cfg)) ||
+        !identical(cfg$preprocessing_policy, PERTURB_COHORT_POLICY)) {
+      schema_error(path, "missing or incompatible GB2024 preprocessing policy")
+    }
+    frangieh_validate_preprocessing_contract(cfg$preprocessing_contract)
+    contract <- cfg$preprocessing_contract
+    if (!identical(cfg$covariate_names, contract$covariates) ||
+        !is.numeric(cfg$n_cells_full) || length(cfg$n_cells_full) != 1L ||
+        !is.finite(cfg$n_cells_full) || cfg$n_cells_full != contract$counts$retained_cells ||
+        !is.numeric(cfg$n_pure_nt) || length(cfg$n_pure_nt) != 1L ||
+        !is.finite(cfg$n_pure_nt) || cfg$n_pure_nt != contract$counts$pure_nt_cells ||
+        !is.numeric(cfg$n_nt_exposure_guides) || length(cfg$n_nt_exposure_guides) != 1L ||
+        !is.finite(cfg$n_nt_exposure_guides) || cfg$n_nt_exposure_guides != as.integer(cfg$n_nt_exposure_guides) ||
+        cfg$n_nt_exposure_guides < 1L || cfg$n_nt_exposure_guides > contract$counts$eligible_guides) {
+      schema_error(path, "GB2024 cohort sizes or covariates disagree with the preprocessing contract")
+    }
   }
   if (length(cfg$h) != 1L || !is.numeric(cfg$h) || cfg$h < 1L ||
       length(cfg$B_max) != 1L || !is.numeric(cfg$B_max) || cfg$B_max < 1L ||
@@ -71,13 +90,21 @@ validate_rep <- function(obj, path, expected_rep = NULL, intermediate_dir = NULL
   }
   q_keys <- perturb_q_key(q_levels)
   canonical <- list(n_reps_max = 20L, n_pos = 50L, n_null = 950L,
-                    n_total = 1000L, median_size = 3L, h = 15L, B_max = 25000L)
+                    n_total = 1000L, h = 15L, B_max = 25000L)
   for (field in names(canonical)) {
     value <- cfg[[field]]
     if (!is.numeric(value) || length(value) != 1L || !is.finite(value) ||
         value != canonical[[field]]) schema_error(path, "noncanonical config$", field)
   }
-  if (!identical(q_levels, c(0.01, 0.05))) schema_error(path, "noncanonical q grid")
+  if (!is.numeric(cfg$median_size) || length(cfg$median_size) != 1L ||
+       !is.finite(cfg$median_size) || cfg$median_size != as.integer(cfg$median_size) ||
+       cfg$median_size < 1L || cfg$median_size > cfg$n_nt_exposure_guides) {
+    schema_error(path, "invalid target-matched NT subset size")
+  }
+  if (!identical(q_levels, PERTURB_Q_LEVELS)) schema_error(path, "only q = 0.10 is supported")
+  if (!identical(cfg$rng_layout, PERTURB_RNG_LAYOUT_ID) || !identical(cfg$RNGkind, PERTURB_RNG_KIND)) {
+    schema_error(path, "reference-stream layout or RNG kind differs")
+  }
   if (!is.numeric(cfg$rep_idx) || length(cfg$rep_idx) != 1L ||
       !is.finite(cfg$rep_idx) || cfg$rep_idx != as.integer(cfg$rep_idx) ||
       !cfg$rep_idx %in% 1:20 || !identical(as.integer(cfg$seed), 1000L + as.integer(cfg$rep_idx))) {
@@ -86,7 +113,10 @@ validate_rep <- function(obj, path, expected_rep = NULL, intermediate_dir = NULL
   filename_rep <- suppressWarnings(as.integer(sub("^score_fdr_rep([0-9]{3})[.]rds$", "\\1", basename(path))))
   if (is.na(filename_rep) || filename_rep != cfg$rep_idx ||
       (!is.null(expected_rep) && cfg$rep_idx != expected_rep)) schema_error(path, "replicate does not match its expected filename/index")
-  frangieh_validate_provenance(obj$provenance, script_dir, intermediate_dir)
+  frangieh_validate_provenance(obj$provenance, script_dir, intermediate_dir, result = res)
+  if (!identical(obj$provenance$preprocessing_contract, cfg$preprocessing_contract)) {
+    schema_error(path, "result configuration and provenance preprocessing contracts differ")
+  }
 
   required_result <- c("rep", "seed", "pairs", "methods", "timings")
   if (!all(required_result %in% names(res))) {
@@ -134,6 +164,18 @@ validate_rep <- function(obj, path, expected_rep = NULL, intermediate_dir = NULL
   if (sum(pairs$is_alt) != as.integer(cfg$n_pos) ||
       sum(!pairs$is_alt) != as.integer(cfg$n_null)) {
     schema_error(path, "configured alternative/null counts disagree with pairs")
+  }
+  {
+    if (anyNA(pairs$n_cells) || any(!is.finite(pairs$n_cells)) ||
+        any(pairs$n_cells != as.integer(pairs$n_cells)) ||
+        any(pairs$n_cells < 1L | pairs$n_cells > cfg$n_cells_full) ||
+        anyNA(pairs$n_exposed) || any(!is.finite(pairs$n_exposed)) ||
+        any(pairs$n_exposed != as.integer(pairs$n_exposed)) ||
+        any(pairs$n_exposed < 1L | pairs$n_exposed > pairs$n_cells) ||
+        any(pairs$n_cells[!pairs$is_alt] != cfg$n_pure_nt) ||
+        any(pairs$n_cells[pairs$is_alt] - cfg$n_pure_nt != pairs$n_exposed[pairs$is_alt])) {
+      schema_error(path, "pair populations disagree with the GB2024 single-guide control cohort")
+    }
   }
   alt_genes <- unique(as.character(pairs$gene[pairs$is_alt]))
   null_genes <- as.character(pairs$gene[!pairs$is_alt])
@@ -220,19 +262,35 @@ validate_rep <- function(obj, path, expected_rep = NULL, intermediate_dir = NULL
           schema_error(path, "methods$", method, "$by_q[[", key,
                        "]]$stop_round must be NA exactly for active pairs")
         }
+        performed <- ifelse(is.na(by_q$stop_round), by_q$t_total, by_q$stop_round)
+        if (length(by_q$t_total) != 1L || !is.finite(by_q$t_total) ||
+            by_q$t_total < 1L || by_q$t_total > cfg$B_max ||
+            any(performed < 1L | performed > by_q$t_total) ||
+            (length(by_q$active) > 0L && by_q$t_total != cfg$B_max) ||
+            any(by_q$K[by_q$futility] != cfg$h) ||
+            any(by_q$K[c(by_q$rejected, by_q$active)] >= cfg$h) ||
+            max(abs(by_q$p_value - cfg$h / (performed + cfg$h - by_q$K))) > 1e-12 ||
+            length(by_q$R_threshold) != 1L || !is.finite(by_q$R_threshold) ||
+            by_q$R_threshold < 0 || by_q$R_threshold > PERTURB_HEADLINE_Q ||
+            any(by_q$p_value[by_q$rejected] > by_q$R_threshold + 1e-12)) {
+          schema_error(path, "incoherent saved adaptive counters, probabilities or threshold")
+        }
       }
     }
   }
 
   timings <- res$timings
-  if (!is.list(timings) || !is.numeric(timings$cache) ||
-      length(timings$cache) != 1L || !is.finite(timings$cache)) {
-    schema_error(path, "result$timings$cache must be one finite number")
+  if (!is.list(timings) ||
+      (!is.null(timings$cache) && (!is.numeric(timings$cache) ||
+       length(timings$cache) != 1L || !is.finite(timings$cache))) ||
+      (obj$provenance$kind == "native_run" && is.null(timings$cache))) {
+    schema_error(path, "invalid cache timing for the recorded execution kind")
   }
   for (method in PERTURB_RESAMPLING_METHODS) {
     method_timings <- timings[[method]]
     if (!is.numeric(method_timings) ||
-        !setequal(names(method_timings), q_keys) ||
+        length(method_timings) != 1L ||
+        (!is.null(names(method_timings)) && !identical(names(method_timings), q_keys)) ||
         anyNA(method_timings) || any(!is.finite(method_timings))) {
       schema_error(path, "result$timings$", method,
                    " must be a finite numeric vector keyed by q")
@@ -261,11 +319,7 @@ frangieh_validate_collection <- function(files, require_complete = TRUE, interme
     for (i in seq_along(objects)[-1L]) {
       if (!identical(objects[[i]]$config[frangieh_analysis_config_fields], reference)) stop(basename(files[[i]]), ": analysis configuration differs between replicates")
     }
-    recorded <- which(vapply(objects, function(x) !is.null(x$provenance), logical(1)))
-    if (length(recorded) > 1L) {
-      signatures <- lapply(objects[recorded], function(x) x$provenance[c("inputs", "code", "packages", "R", "cohort_policy")])
-      if (any(!vapply(signatures, identical, logical(1), signatures[[1L]]))) stop("Inconsistent provenance across new replicate outputs")
-    }
+
   }
   objects
 }
@@ -273,5 +327,7 @@ frangieh_validate_collection <- function(files, require_complete = TRUE, interme
 frangieh_analysis_config_fields <- c(
   "schema_version", "method_levels", "n_reps_max", "n_pos", "n_null",
   "n_total", "median_size", "n_cells_full", "n_pure_nt", "q_levels",
-  "h", "B_max", "alternative", "null_gene_policy", "null_gene_pool_size", "null_gene_pool"
+  "h", "B_max", "alternative", "null_gene_policy", "null_gene_pool_size", "null_gene_pool",
+  "rng_layout", "RNGkind", "preprocessing_policy", "preprocessing_contract",
+  "covariate_names", "n_nt_exposure_guides"
 )

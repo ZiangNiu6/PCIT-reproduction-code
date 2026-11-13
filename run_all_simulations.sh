@@ -8,9 +8,9 @@ FIGURE_CODE="$SIMULATION_CODE/figure-code"
 
 usage() {
   echo "Usage: $0 [full|check|validate-only|plot-only]"
-  echo "full validates and reuses complete results, computes missing studies, then plots."
+  echo "full computes all three studies in a fresh simulation-results directory, then plots."
   echo "check runs small data-independent method tests; validate-only checks saved results without writes."
-  echo "Use an empty LOCAL_PDRT_DATA_DIR for a fresh full rerun. Invalid existing files fail closed."
+  echo "Use a new LOCAL_PDRT_DATA_DIR for full; existing simulation outputs are never reused or replaced."
 }
 
 mode="${1:-full}"
@@ -23,8 +23,16 @@ fi
 
 source "$SCRIPT_DIR/workflow-common.sh"
 pcit_initialize "$SCRIPT_DIR"
+if [[ "$mode" == full ]]; then
+  pcit_require_fresh_directory "$LOCAL_PDRT_DATA_DIR/simulation-results"
+fi
 pcit_check_r
 pcit_restore
+
+if [[ "$mode" == full ]] && ! command -v nextflow >/dev/null 2>&1; then
+  echo "Nextflow is required for a full simulation run. See reproduction-code/README.md." >&2
+  exit 1
+fi
 
 if [[ "$mode" == full || "$mode" == check ]]; then
   pcit_r "$SIMULATION_CODE/smoke-test-pcm-additive-matched.R"
@@ -37,17 +45,7 @@ if [[ "$mode" == check ]]; then
 fi
 
 if [[ "$mode" == full ]]; then
-  glm_results="$LOCAL_PDRT_DATA_DIR/simulation-results/glm-variance-robustness/illustrative-example-results.rds"
-  if [[ -f "$glm_results" ]]; then
-    if ! pcit_r "$FIGURE_CODE/plot-glm-variance-robustness.R" --validate-only; then
-      echo "Invalid existing GLM result: $glm_results" >&2
-      echo "Review and move that file out of this result namespace, or use an empty LOCAL_PDRT_DATA_DIR." >&2
-      exit 1
-    fi
-    echo "Reusing validated GLM result: $glm_results"
-  else
-    pcit_r "$SIMULATION_CODE/glm-variance-robustness.R" "--cores=${PCIT_GLM_CORES:-1}"
-  fi
+  pcit_r "$SIMULATION_CODE/glm-variance-robustness.R" "--cores=${PCIT_GLM_CORES:-1}"
 
   "$SIMULATION_CODE/run_simulation.sh" \
     --sim_name nb-permutation-signflip \

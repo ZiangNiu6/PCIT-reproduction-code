@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# Run one formal simulatr specification through the shared Nextflow pipeline.
+# Run one fresh formal simulatr specification through the Nextflow pipeline.
 
 set -euo pipefail
 
@@ -23,6 +23,7 @@ usage() {
 Usage: run_simulation.sh --sim_name NAME --results_dir DIR [options]
 
 Options:
+  --results_dir DIR      New or empty study directory; existing work is refused
   --sim_spec_dir DIR     Directory containing NAME.R (default: sim-spec-formal)
   --profile PROFILE      Nextflow profile: local or standard (default: local)
   --B_check INTEGER      Benchmark replications (default: 3)
@@ -123,9 +124,9 @@ fi
 
 source "$PACKAGE_ROOT/workflow-common.sh"
 pcit_initialize "$PACKAGE_ROOT"
+pcit_require_fresh_directory "$results_dir"
 pcit_check_r
 
-mkdir -p "$results_dir"
 results_dir="$(cd "$results_dir" && pwd -P)"
 output_file="$results_dir/${sim_name}_results.rds"
 specifier_file="$results_dir/${sim_name}_specifier.rds"
@@ -141,36 +142,22 @@ validate_result() {
   fi
 }
 
-if [[ -f "$output_file" ]]; then
-  if ! validate_result; then
-    echo "Invalid existing simulation result: $output_file" >&2
-    echo "Review and move that file out of this namespace, or choose an empty --results_dir. It has not been overwritten." >&2
-    exit 1
-  fi
-  echo "Reusing validated simulation result: $output_file"
-  exit 0
-fi
-
 if ! command -v nextflow >/dev/null 2>&1; then
-  echo "Nextflow is required to compute missing simulation results. See reproduction-code/README.md." >&2
+  echo "Nextflow is required for a fresh simulation run. See reproduction-code/README.md." >&2
   exit 1
 fi
 
 export PCIT_SIM_SPEC_SCRIPT="$sim_spec_script"
 export PCIT_SIM_SPECIFIER_FILE="$specifier_file"
-if [[ ! -f "$specifier_file" || \
-      "$sim_spec_script" -nt "$specifier_file" || \
-      "$grid_script" -nt "$specifier_file" ]]; then
-  echo "Building simulatr specifier: $specifier_file"
-  pcit_r -e '
-    suppressPackageStartupMessages(library(simulatr))
-    source(Sys.getenv("PCIT_SIM_SPEC_SCRIPT"))
-    if (!exists("simulatr_spec", inherits = FALSE)) {
-      stop("The specifier source did not create simulatr_spec.")
-    }
-    saveRDS(simulatr_spec, Sys.getenv("PCIT_SIM_SPECIFIER_FILE"))
-  '
-fi
+echo "Building simulatr specifier from current source: $specifier_file"
+pcit_r -e '
+  suppressPackageStartupMessages(library(simulatr))
+  source(Sys.getenv("PCIT_SIM_SPEC_SCRIPT"))
+  if (!exists("simulatr_spec", inherits = FALSE)) {
+    stop("The specifier source did not create simulatr_spec.")
+  }
+  saveRDS(simulatr_spec, Sys.getenv("PCIT_SIM_SPECIFIER_FILE"))
+'
 
 printf 'env.R_LIBS_USER = "%s"\n' "$R_LIBS_USER" > "$results_dir/nextflow.config"
 

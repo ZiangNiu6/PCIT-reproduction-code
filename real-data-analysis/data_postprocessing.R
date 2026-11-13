@@ -2,9 +2,9 @@
 ## Aggregate the five-method Frangieh score-calibration experiment.
 ##
 ## Input:
-##   results/score-calibration-nonpositive-nulls/score_fdr_repNNN.rds
+##   results/frangieh-2021/score-calibration-gb2024-q10/score_fdr_repNNN.rds
 ##
-## Outputs in results/score-calibration-nonpositive-nulls/:
+## Outputs beside the q=0.10 replicate files:
 ##   score_pair_long.rds       pair x method x q p-values and decisions
 ##   score_fdr_summary.rds     replicate-level FDR and power
 ##   score_fdr_aggregated.rds  across-replicate means and standard errors
@@ -41,7 +41,8 @@ cat(sprintf("Reading and validating %d replicate files...\n", length(rep_files))
 rep_objects <- frangieh_validate_collection(rep_files)
 reference_config <- rep_objects[[1L]]$config
 if (identical(args, "--validate-only")) {
-  cat("All 20 Frangieh v2 replicate outputs are valid; no files written.\n")
+  cat("All 20 Frangieh ", PERTURB_ANALYSIS_SCHEMA,
+      " replicate outputs are valid; no files written.\n", sep = "")
   quit(save = "no", status = 0L)
 }
 q_levels <- as.numeric(reference_config$q_levels)
@@ -169,14 +170,22 @@ build_diagnostics <- function(obj) {
     for (method in PERTURB_RESAMPLING_METHODS) {
       row_idx <- row_idx + 1L
       adaptive <- res$methods[[method]]$by_q[[key]]
+      method_timing <- res$timings[[method]]
+      if (length(q_levels) == 1L && is.numeric(method_timing) &&
+          length(method_timing) == 1L && is.null(names(method_timing))) {
+        # The selected single-q execution recorded scalar method timings.
+        method_secs <- as.numeric(method_timing)
+      } else {
+        method_secs <- as.numeric(method_timing[[key]])
+      }
       stop_round <- as.numeric(adaptive$stop_round)
       completed_stop_round <- stop_round[!is.na(stop_round)]
       rows[[row_idx]] <- data.frame(
         rep = as.integer(res$rep),
         q = q,
         method = method,
-        cache_secs = as.numeric(res$timings$cache),
-        method_secs = as.numeric(res$timings[[method]][[key]]),
+        cache_secs = if (is.null(res$timings$cache)) NA_real_ else as.numeric(res$timings$cache),
+        method_secs = method_secs,
         t_total = as.numeric(adaptive$t_total),
         n_rejected = length(adaptive$rejected),
         n_futility = length(adaptive$futility),
@@ -207,6 +216,21 @@ diagnostics_df$method <- factor(
 diagnostics_df <- diagnostics_df |>
   mutate(schema_version = PERTURB_SCHEMA_VERSION, .before = 1L)
 frangieh_atomic_rds(diagnostics_df, file.path(results_dir, "score_diagnostics.rds"), replace = TRUE)
+
+table_files <- file.path(results_dir, c(
+  "score_pair_long.rds", "score_fdr_summary.rds",
+  "score_fdr_aggregated.rds", "score_diagnostics.rds"
+))
+postprocessing_contract <- list(
+  schema = "frangieh_postprocessed_bundle_v1",
+  result_schema = PERTURB_SCHEMA_VERSION,
+  cohort_policy = PERTURB_COHORT_POLICY,
+  preprocessing_contract = reference_config$preprocessing_contract,
+  replicate_files = frangieh_file_manifest(rep_files),
+  tables = frangieh_file_manifest(table_files)
+)
+frangieh_atomic_rds(postprocessing_contract,
+                   file.path(results_dir, "postprocessing-contract.rds"), replace = TRUE)
 
 cat("\nFDR and power summary (mean +/- SE):\n")
 print(

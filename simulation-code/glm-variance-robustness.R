@@ -253,10 +253,18 @@ config <- list(
 )
 
 output_directory <- read_option("output-dir", default_output_directory)
-if (!plot_only) {
-  dir.create(output_directory, recursive = TRUE, showWarnings = FALSE)
-}
 output_directory <- normalizePath(output_directory, mustWork = FALSE)
+results_path <- Sys.getenv("PCIT_GLM_RESULTS_FILE", unset = file.path(
+  output_directory, "illustrative-example-results.rds"
+))
+if (!plot_only) {
+  if (file.exists(results_path)) {
+    stop("Full computation requires a fresh result path: ", results_path,
+         ". Choose a new output directory; use --plot-only for saved results.",
+         call. = FALSE)
+  }
+  reproduction_require_fresh_directory(output_directory)
+}
 
 if (.Platform$OS.type == "windows" && config$cores > 1L) {
   warning("Parallel fork execution is unavailable on Windows; using one core.")
@@ -1145,10 +1153,6 @@ make_figure <- function(replicate_results, summary, config, output_directory) {
   ))
 }
 
-results_path <- Sys.getenv("PCIT_GLM_RESULTS_FILE", unset = file.path(
-  output_directory, "illustrative-example-results.rds"
-))
-
 if (plot_only) {
   if (!file.exists(results_path)) {
     stop("--plot-only requested, but no results file exists at ", results_path)
@@ -1158,8 +1162,8 @@ if (plot_only) {
   if (is.null(saved_schema_version) ||
       !identical(saved_schema_version, config$simulation_schema_version)) {
     stop(
-      "The saved results use an outdated simulation design. Rerun without ",
-      "--plot-only."
+      "The saved results use an outdated simulation design. Run a fresh ",
+      "computation in a new output directory."
     )
   }
   canonical_config <- config
@@ -1184,7 +1188,7 @@ if (plot_only) {
   )]
   if (length(noncanonical_fields) > 0L) {
     stop(
-      "The cached GLM result is a pilot or uses a noncanonical design ",
+      "The saved GLM result is a pilot or uses a noncanonical design ",
       "and cannot generate the manuscript figure. Mismatched fields: ",
       paste(noncanonical_fields, collapse = ", "), "."
     )
@@ -1203,8 +1207,8 @@ if (plot_only) {
   )
   if (length(missing_result_columns) > 0L) {
     stop(
-      "The saved results predate empirical studentization. Rerun without ",
-      "--plot-only. Missing columns: ",
+      "The saved results predate empirical studentization. Run a fresh ",
+      "computation in a new output directory. Missing columns: ",
       paste(missing_result_columns, collapse = ", "), "."
     )
   }

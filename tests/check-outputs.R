@@ -4,6 +4,7 @@ script_arg <- grep("^--file=", commandArgs(FALSE), value = TRUE)
 stopifnot(length(script_arg) == 1L)
 package_root <- normalizePath(file.path(dirname(sub("^--file=", "", script_arg)), ".."))
 checker <- file.path(package_root, "check_outputs.R")
+source(file.path(package_root, "real-data-analysis", "method_config.R"))
 stopifnot(requireNamespace("jsonlite", quietly = TRUE),
           requireNamespace("digest", quietly = TRUE))
 
@@ -68,9 +69,9 @@ run_tests <- function() {
   v4_paths <- file.path(figure_dir, tail(figure_names, 2L))
   unlink(v4_paths)
   run_check(expected_status = 1L, expected_message = "Missing publication figure")
-  run_check("--allow-legacy", expected_message = "Validated 8 publication PDF")
+  run_check("--allow-legacy", expected_status = 1L, expected_message = "Unknown or repeated")
   file.copy(seed_pdf, v4_paths[[1L]])
-  run_check("--allow-legacy", expected_status = 1L, expected_message = "Missing publication figure")
+  run_check(expected_status = 1L, expected_message = "Missing publication figure")
   file.copy(seed_pdf, v4_paths[[2L]])
   default_figures <- file.path(result_dir, "figures-and-tables")
   dir.create(default_figures)
@@ -82,13 +83,18 @@ run_tests <- function() {
     "simulation-results/nb-permutation-signflip-continuous-dispersion-estimated-theta/nb-permutation-signflip_results.rds",
     "simulation-results/pcm-additive-matched-dcrt/pcm-additive_results.rds",
     "ccle/ccle-typeI-synthY-30targets-matched-v4-results.rds",
-    sprintf("frangieh-2021/score-calibration-nonpositive-nulls/score_fdr_rep%03d.rds", 1:20)
+    sprintf("frangieh-2021/%s/score_fdr_rep%03d.rds", PERTURB_RESULTS_SUBDIR, 1:20)
   )
   entries <- lapply(seq_along(artifact_paths), function(index) {
     relative_path <- artifact_paths[[index]]
     path <- file.path(result_dir, relative_path)
     dir.create(dirname(path), recursive = TRUE, showWarnings = FALSE)
-    saveRDS(list(fixture = index), path)
+    fixture <- list(fixture = index)
+    if (index > 4L) {
+      fixture$config <- list(schema_version = PERTURB_SCHEMA_VERSION,
+                             q_levels = PERTURB_Q_LEVELS)
+    }
+    saveRDS(fixture, path)
     list(path = paste0("results/", relative_path), bytes = file.info(path)$size,
          sha256 = digest::digest(file = path, algo = "sha256", serialize = FALSE))
   })
@@ -105,6 +111,9 @@ run_tests <- function() {
   dir.create(standalone_root)
   file.copy(file.path(package_root, c("check_outputs.R", "reproduction-helpers.R", "renv.lock")),
             standalone_root)
+  dir.create(file.path(standalone_root, "real-data-analysis"))
+  stopifnot(file.copy(file.path(package_root, "real-data-analysis", "method_config.R"),
+                     file.path(standalone_root, "real-data-analysis")))
   version <- paste0("R-", R.version$major, ".",
                     strsplit(R.version$minor, ".", fixed = TRUE)[[1L]][1L])
   standalone_library <- file.path(standalone_root, "renv", "library", "test", version, "test-platform")
@@ -127,6 +136,23 @@ run_tests <- function() {
   if (!is.na(saved_override)) Sys.setenv(PCIT_R_LIBRARY = saved_override)
   if (!is.na(saved_results_environment)) Sys.setenv(LOCAL_PDRT_DATA_DIR = saved_results_environment)
   if (!is.na(saved_figure_environment)) Sys.setenv(PCIT_FIGURE_DIR = saved_figure_environment)
+  # A checksum-valid artifact still has to use the selected single-q schema.
+  frangieh_path <- file.path(result_dir, artifact_paths[[5L]])
+  original_frangieh <- readRDS(frangieh_path)
+  for (field in c("q_levels", "schema_version")) {
+    invalid_frangieh <- original_frangieh
+    invalid_frangieh$config[[field]] <- if (field == "q_levels") 0.2 else "unexpected_schema"
+    saveRDS(invalid_frangieh, frangieh_path)
+    bad_manifest <- manifest
+    bad_manifest$artifacts[[5L]]$bytes <- file.info(frangieh_path)$size
+    bad_manifest$artifacts[[5L]]$sha256 <- digest::digest(
+      file = frangieh_path, algo = "sha256", serialize = FALSE
+    )
+    write_manifest(bad_manifest)
+    run_check("--verify-results", expected_status = 1L,
+              expected_message = "selected single-q schema")
+  }
+  saveRDS(original_frangieh, frangieh_path)
   bad_manifest <- manifest
   bad_manifest$artifacts[[1L]]$sha256 <- paste(rep("0", 64L), collapse = "")
   write_manifest(bad_manifest)

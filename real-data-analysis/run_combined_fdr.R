@@ -12,13 +12,47 @@
 ##   * hgf_signflip_mc (Monte Carlo, no SPA)
 ##   * standardized_signflip
 ##
-## The four resampling methods use pcmt::adaptive_fdr_bh separately at each
-## target q.  Information/empirical permutation draws are paired by
+## The four resampling methods use pcmt::adaptive_fdr_bh at q = 0.10.
+## Information/empirical permutation draws are paired by
 ## (replicate, q, round, pair), as are HGF/standardized sign draws.
 ##
 ## Usage: Rscript run_combined_fdr.R <rep_idx>
-## Output: results/score-calibration-nonpositive-nulls/
+## Output: results/frangieh-2021/score-calibration-gb2024-q10/
 ##         score_fdr_rep<rep_idx>.rds
+
+## --- Paths -----------------------------------------------------------------
+script_arg <- grep("^--file=", commandArgs(trailingOnly = FALSE), value = TRUE)
+if (length(script_arg) != 1L) stop("Could not determine this script's path")
+script_dir <- normalizePath(dirname(sub("^--file=", "", script_arg)))
+source(file.path(script_dir, "..", "reproduction-helpers.R"))
+project_root <- reproduction_root(script_dir)
+results_root <- reproduction_results_root(project_root)
+source(file.path(script_dir, "method_config.R"))
+intermediate_dir <- Sys.getenv(
+  "FRANGIEH_INTERMEDIATE_DIR",
+  unset = file.path(results_root, "frangieh-2021", PERTURB_INTERMEDIATE_SUBDIR)
+)
+source(file.path(script_dir, "score_helpers.R"))
+source(file.path(script_dir, "workflow-io.R"))
+source(file.path(script_dir, "result-validation.R"))
+results_dir <- Sys.getenv(
+  "FRANGIEH_SCORE_RESULTS_DIR",
+  unset = file.path(results_root, "frangieh-2021", PERTURB_RESULTS_SUBDIR)
+)
+dir.create(results_dir, showWarnings = FALSE, recursive = TRUE)
+
+## --- Parse args ------------------------------------------------------------
+args <- commandArgs(trailingOnly = TRUE)
+if (length(args) != 1L) stop("Usage: Rscript run_combined_fdr.R <rep_idx>")
+rep_number <- suppressWarnings(as.numeric(args[[1L]]))
+if (length(rep_number) != 1L || !is.finite(rep_number) || rep_number != as.integer(rep_number)) stop("rep_idx must be an integer")
+rep_idx <- as.integer(rep_number)
+N_REPS_MAX <- 20L
+stopifnot(!is.na(rep_idx), rep_idx >= 1L, rep_idx <= N_REPS_MAX)
+rep_seed <- 1000L + rep_idx
+
+out_file <- file.path(results_dir, sprintf("score_fdr_rep%03d.rds", rep_idx))
+if (file.exists(out_file)) stop("Refusing to overwrite an existing replicate; choose a fresh result directory: ", out_file)
 
 suppressPackageStartupMessages({
   library(pcmt)
@@ -34,48 +68,8 @@ if (!"adaptive_fdr_bh" %in% getNamespaceExports("pcmt")) {
   )
 }
 
-## --- Paths -----------------------------------------------------------------
-script_arg <- grep("^--file=", commandArgs(trailingOnly = FALSE), value = TRUE)
-if (length(script_arg) != 1L) stop("Could not determine this script's path")
-script_dir <- normalizePath(dirname(sub("^--file=", "", script_arg)))
-source(file.path(script_dir, "..", "reproduction-helpers.R"))
-project_root <- reproduction_root(script_dir)
-results_root <- reproduction_results_root(project_root)
-intermediate_dir <- Sys.getenv(
-  "FRANGIEH_INTERMEDIATE_DIR",
-  unset = file.path(results_root, "frangieh-2021", "intermediate-data")
-)
-source(file.path(script_dir, "method_config.R"))
-source(file.path(script_dir, "score_helpers.R"))
-source(file.path(script_dir, "workflow-io.R"))
-source(file.path(script_dir, "result-validation.R"))
-results_dir <- Sys.getenv(
-  "FRANGIEH_SCORE_RESULTS_DIR",
-  unset = file.path(results_root, "frangieh-2021", PERTURB_RESULTS_SUBDIR)
-)
-dir.create(results_dir, showWarnings = FALSE, recursive = TRUE)
-
-## --- Parse args ------------------------------------------------------------
-args <- commandArgs(trailingOnly = TRUE)
-force_rerun <- "--force" %in% args
-args <- args[args != "--force"]
-if (length(args) != 1L) stop("Usage: Rscript run_combined_fdr.R <rep_idx> [--force]")
-rep_number <- suppressWarnings(as.numeric(args[[1L]]))
-if (length(rep_number) != 1L || !is.finite(rep_number) || rep_number != as.integer(rep_number)) stop("rep_idx must be an integer")
-rep_idx <- as.integer(rep_number)
-N_REPS_MAX <- 20L
-stopifnot(!is.na(rep_idx), rep_idx >= 1L, rep_idx <= N_REPS_MAX)
-rep_seed <- 1000L + rep_idx
-
-out_file <- file.path(results_dir, sprintf("score_fdr_rep%03d.rds", rep_idx))
-if (file.exists(out_file) && !force_rerun) {
-  available_inputs <- frangieh_intermediate_directory(intermediate_dir)
-  if (!all(file.exists(file.path(available_inputs, frangieh_intermediate_files)))) available_inputs <- NULL
-  validate_rep(readRDS(out_file), out_file, expected_rep = rep_idx, intermediate_dir = available_inputs)
-  cat("Reusing valid replicate: ", out_file, "\n", sep = "")
-  quit(save = "no", status = 0L)
-}
 intermediate_dir <- frangieh_validate_intermediates(intermediate_dir, script_dir = script_dir)
+preprocessing_contract <- frangieh_read_preprocessing_contract(intermediate_dir)
 
 ## --- Load preprocessed data ------------------------------------------------
 cat("Loading intermediate data...\n")
@@ -101,7 +95,8 @@ cat(sprintf("Pure-NT cells (universal control): %d / %d\n",
             n_pure_nt, n_cells_full))
 
 ## --- Experiment constants --------------------------------------------------
-Q_LEVELS <- c(0.01, 0.05)
+Q_LEVELS <- PERTURB_Q_LEVELS
+do.call(RNGkind, as.list(PERTURB_RNG_KIND))
 H_STOP <- 15L
 B_MAX <- 25000L
 pos_targets <- unique(positive_control_pairs$grna_target)
@@ -514,7 +509,7 @@ local({
 lock_dir <- paste0(out_file, ".lock")
 if (!dir.create(lock_dir, showWarnings = FALSE)) stop("Replicate is locked by another worker: ", lock_dir)
 on.exit(unlink(lock_dir, recursive = TRUE), add = TRUE)
-if (file.exists(out_file) && !force_rerun) stop("Replicate appeared while preparing; rerun the resume command")
+if (file.exists(out_file)) stop("Refusing to overwrite a replicate that appeared while preparing: ", out_file)
 provenance <- frangieh_provenance(intermediate_dir, script_dir)
 t_global <- Sys.time()
 result <- run_rep()
@@ -522,26 +517,8 @@ total_minutes <- as.numeric(difftime(Sys.time(), t_global, units = "mins"))
 cat(sprintf("\n=== Rep %d completed in %.1f min ===\n", rep_idx, total_minutes))
 
 output <- list(
-  config = list(
-    schema_version = PERTURB_SCHEMA_VERSION,
-    method_levels = PERTURB_METHOD_LEVELS,
-    n_reps_max = N_REPS_MAX,
-    rep_idx = rep_idx,
-    seed = rep_seed,
-    n_pos = n_pos,
-    n_null = n_null,
-    n_total = n_total,
-    median_size = median_size,
-    n_cells_full = n_cells_full,
-    n_pure_nt = n_pure_nt,
-    null_gene_policy = PERTURB_NULL_GENE_POLICY,
-    null_gene_pool_size = length(null_gene_pool),
-    null_gene_pool = null_gene_pool,
-    q_levels = Q_LEVELS,
-    h = H_STOP,
-    B_max = B_MAX,
-    alternative = "two.sided"
-  ),
+  config = perturb_run_config(rep_idx, preprocessing_contract, length(nt_grna_ids),
+                              median_size, null_gene_pool),
   result = result,
   provenance = provenance
 )
@@ -551,7 +528,7 @@ out_file <- file.path(
   sprintf("score_fdr_rep%03d.rds", rep_idx)
 )
 validate_rep(output, out_file, expected_rep = rep_idx, intermediate_dir = intermediate_dir)
-frangieh_atomic_rds(output, out_file, replace = force_rerun)
+frangieh_atomic_rds(output, out_file)
 cat("Result saved to:", out_file, "\n")
 
 })

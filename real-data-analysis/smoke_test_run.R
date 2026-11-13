@@ -22,7 +22,7 @@ expect_near <- function(x, y, tolerance, label) {
 ## in the configured block, while deliberately agreeing across paired methods.
 seed_grid <- expand.grid(
   rep_index = 1:2,
-  q = c(0.01, 0.05),
+  q = PERTURB_Q_LEVELS,
   stream = 1:2,
   iteration = 1:3,
   pair_idx = 1:4
@@ -36,15 +36,19 @@ seed_grid$seed <- mapply(
   stream = seed_grid$stream,
   MoreArgs = list(
     max_reps = 20L,
-    q_levels = c(0.01, 0.05),
+    q_levels = PERTURB_Q_LEVELS,
     n_pairs = 1000L,
     B_max = 25000L
   )
 )
 stopifnot(!anyDuplicated(seed_grid$seed))
+for (rep in c(1L,20L)) for (iteration in c(1L,25000L)) for (pair in c(1L,1000L)) for (stream in 1:2) {
+  expected <- as.integer((rep-1)*100000000 + (stream+1)*25000000 + (iteration-1)*1000 + pair)
+  stopifnot(identical(perturb_resample_seed(rep,20L,.1,.1,iteration,pair,1000L,25000L,stream),expected))
+}
 
 ## Synthetic-null response genes must exclude every positive-control target,
-## even when a legacy preprocessing object includes them in its candidate list.
+## even when a preprocessing object includes them in its candidate list.
 test_gene_list <- c("POS1", "POS2", "NULL1", "NULL2", "NULL3")
 test_null_pool <- perturb_null_gene_pool(
   gene_list = test_gene_list,

@@ -1,0 +1,74 @@
+{
+  "status": "complete",
+  "rep": 4,
+  "fingerprint": "5131b2320af53d689a763a0e5665547eca817da7d1159a93ae2eac8096305308",
+  "config": {
+    "schema_version": "frangieh_score5_q10_extension_v1",
+    "rep_idx": 4,
+    "q": 0.1,
+    "h": 15,
+    "B_max": 25000,
+    "pilot": false,
+    "seed_reference_q": 0.05,
+    "seed_reference_q_levels": [0.01, 0.05],
+    "seed_reference_B_max": 25000,
+    "seed_scope": "Exact original q=.05 coordinate streams; q=.10 changes adaptive decisions only. Scalar paired-reference memoization skips redundant deterministic computations.",
+    "RNGkind": ["Mersenne-Twister", "Inversion", "Rejection"],
+    "pcmt": "0.1.0",
+    "pcmt_path": "/Users/ziangniu/Documents/Projects/PCIT/PCIT-project/renv/library/macos/R-4.4/aarch64-apple-darwin20/pcmt",
+    "adaptive_body_sha256": "7b7a86f4a422ca618b9b83680ce2f03cfb7985ac9da74f9b52d9682a0504c50c",
+    "method_levels": ["parametric_score", "information_studentized_permutation", "studentized_permutation", "hgf_signflip_mc", "standardized_signflip"],
+    "n_positive": 50,
+    "n_null": 950,
+    "n_total": 1000
+  },
+  "inputs": [
+    {
+      "path": "/Users/ziangniu/Documents/Projects/PCIT/PCIT-project/results/frangieh-q10/cache.rds",
+      "bytes": 199415458,
+      "sha256": "9ad91cd0b0a5da8e2c2393cf458534cad1f8685a2e453671df3c0f4c46602bda"
+    },
+    {
+      "path": "/Users/ziangniu/Documents/Projects/PCIT/PCIT-project/results/frangieh-q10/cache-manifest.json",
+      "bytes": 20727,
+      "sha256": "aeb9e4234a69be0bb02a332c3073222ea17822199998af9b5c3edfb3efa0c6ad"
+    },
+    {
+      "path": "/Users/ziangniu/Documents/Projects/PCIT/PCIT-project/reproduction-code/results/frangieh-2021/score-calibration-gb2024-single-guide-v3/score_fdr_rep004.rds",
+      "bytes": 673851,
+      "sha256": "4652c63a3c0881eb47d11a7cf8b95103a681c6718bfe4bf164a6371b839564cc"
+    }
+  ],
+  "sources": [
+    {
+      "path": "/Users/ziangniu/Documents/Projects/PCIT/PCIT-project/development-code/real-data-analysis/frangieh-q10/run_q10_rep.R",
+      "bytes": 10443,
+      "sha256": "dca080b300208fb6ad0c8e31ab2c8639a91c6953659570a90b4b1dc24ebc51e5"
+    },
+    {
+      "path": "/Users/ziangniu/Documents/Projects/PCIT/PCIT-project/reproduction-code/real-data-analysis/score_helpers.R",
+      "bytes": 10810,
+      "sha256": "f7e1c2730adc02ed847bc4395c6aaec504ed912353a6e11085033ca4af72d329"
+    },
+    {
+      "path": "/Users/ziangniu/Documents/Projects/PCIT/PCIT-project/reproduction-code/real-data-analysis/method_config.R",
+      "bytes": 5890,
+      "sha256": "7d6ac0666ab8b38553376195da4fa92057e2476a1c6bbda4ee1851d7d649d798"
+    }
+  ],
+  "outputs": [
+    {
+      "path": "/Users/ziangniu/Documents/Projects/PCIT/PCIT-project/results/frangieh-q10/score_fdr_q10_rep004.rds",
+      "bytes": 394170,
+      "sha256": "cc92ae01b899d896f75dcf7ffd9ff269722b7a31fb5c599a25fa22ed54821f13"
+    }
+  ],
+  "reference_counts": {
+    "permutation_computed": 260923,
+    "permutation_reused": 182558,
+    "flip_computed": 206986,
+    "flip_reused": 206817
+  },
+  "elapsed_seconds": 224.176,
+  "completed_utc": "2026-11-13 15:28:50 UTC"
+}

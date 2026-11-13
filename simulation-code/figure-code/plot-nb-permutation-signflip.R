@@ -10,7 +10,7 @@
 #
 # Optional positional arguments:
 #   1. simulation results RDS
-#   2. parameter-grid R source (or a legacy RDS)
+#   2. parameter-grid R source
 #
 # By default, the script reads
 #   results/simulation-results/
@@ -82,6 +82,9 @@ parameter_grid_file <- if (length(arguments) >= 2L) {
     "simulation-code", "sim-spec-formal",
     paste0(sim_name, "-grid.R")
   )
+}
+if (!grepl("[.]R$", parameter_grid_file, ignore.case = TRUE)) {
+  stop("The parameter grid must be an R source file (grid.R).")
 }
 
 if (!file.exists(results_file)) {
@@ -380,16 +383,12 @@ if (!is.list(results$output)) {
   stop("The results output column must be a list-column.")
 }
 
-if (grepl("[.]rds$", parameter_grid_file, ignore.case = TRUE)) {
-  parameter_grid <- as.data.frame(readRDS(parameter_grid_file))
-} else {
-  grid_environment <- new.env(parent = globalenv())
-  sys.source(parameter_grid_file, envir = grid_environment)
-  if (!exists("parameter_grid", envir = grid_environment, inherits = FALSE)) {
-    stop("Parameter-grid source did not create parameter_grid: ", parameter_grid_file)
-  }
-  parameter_grid <- as.data.frame(grid_environment$parameter_grid)
+grid_environment <- new.env(parent = globalenv())
+sys.source(parameter_grid_file, envir = grid_environment)
+if (!exists("parameter_grid", envir = grid_environment, inherits = FALSE)) {
+  stop("Parameter-grid source did not create parameter_grid: ", parameter_grid_file)
 }
+parameter_grid <- as.data.frame(grid_environment$parameter_grid)
 missing_grid_columns <- setdiff(required_grid_columns, names(parameter_grid))
 if (length(missing_grid_columns) > 0L) {
   stop(

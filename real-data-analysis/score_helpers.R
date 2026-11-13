@@ -81,8 +81,7 @@ estimate_theta_r <- function(y, mu, dfr, limit = 200L,
 }
 
 ## Poisson mean + Pearson/MoM dispersion, used when glm.nb fails or warns.
-## The Poisson fitted values are the conditional-mean MLE under both the
-## Poisson and the NB log-linear model, so they serve as mu_hat directly.
+## The Poisson log-mean fit supplies mu_hat; dispersion is estimated below.
 nb_fit_poisson_fallback <- function(Y, Z_design) {
   Y <- as.numeric(Y)
   pois_fit <- suppressWarnings(

@@ -38,6 +38,24 @@ reproduction_figure_dir <- function(root = reproduction_root()) {
   reproduction_absolute_path(path, root)
 }
 
+reproduction_require_fresh_directory <- function(directory, allowed = character()) {
+  if (!dir.exists(directory) && !dir.create(directory, recursive = TRUE)) {
+    stop("Could not create output directory: ", directory, call. = FALSE)
+  }
+  entries <- list.files(directory, all.files = TRUE, no.. = TRUE)
+  permitted <- entries %in% allowed & !dir.exists(file.path(directory, entries))
+  if (any(!permitted)) {
+    stop("Full computation requires a fresh output directory: ", directory,
+         ". Choose a new directory; use plot-only for saved results.", call. = FALSE)
+  }
+  # A permanent atomic claim also excludes concurrent or interrupted runs.
+  if (!dir.create(file.path(directory, ".full-run-started"), showWarnings = FALSE)) {
+    stop("Full computation has already started in ", directory,
+         ". Choose a new output directory.", call. = FALSE)
+  }
+  invisible(directory)
+}
+
 # Discover an already restored library without invoking renv's autoloader or
 # installing anything. The parent project library is a development fallback;
 # a copied standalone package uses its own renv/library after restoration.
