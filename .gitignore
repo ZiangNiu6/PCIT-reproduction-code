@@ -1,8 +1,11 @@
+.DS_Store
+*.log
+/tmp/
 .Rhistory
 .RData
 .Rproj.user/
 __pycache__/
-*.pyc
+*.py[cod]
 .nextflow*
 results/ccle/mutation.txt
 results/ccle/response.csv

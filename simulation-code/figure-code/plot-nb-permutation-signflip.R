@@ -4,8 +4,8 @@
 # Summarize and plot the sparse-exposure and variance-misspecification
 # comparison of parametric, permutation, and sign-flip score calibrations.
 #
-# Usage from anywhere:
-#   Rscript --vanilla reproduction-code/simulation-code/figure-code/\
+# Usage from the repository root:
+#   Rscript --vanilla simulation-code/figure-code/\
 #     plot-nb-permutation-signflip.R
 #
 # Optional positional arguments:

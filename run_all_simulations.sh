@@ -30,7 +30,7 @@ pcit_check_r
 pcit_restore
 
 if [[ "$mode" == full ]] && ! command -v nextflow >/dev/null 2>&1; then
-  echo "Nextflow is required for a full simulation run. See reproduction-code/README.md." >&2
+  echo "Nextflow is required for a full simulation run. See the repository README.md." >&2
   exit 1
 fi
 

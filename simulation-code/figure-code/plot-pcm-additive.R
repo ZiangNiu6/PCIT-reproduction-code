@@ -86,7 +86,7 @@ results_dir <- Sys.getenv("PCIT_PCM_RESULTS_FILE", unset = file.path(
 if (!file.exists(results_dir)) {
   stop(
     "Matched pcm-additive/dCRT result not found at ", results_dir, ". ",
-    "Run `bash reproduction-code/run_all_simulations.sh full`; pre-dCRT pcm-additive results ",
+    "Run `bash run_all_simulations.sh full`; pre-dCRT pcm-additive results ",
     "are intentionally not accepted."
   )
 }
@@ -113,7 +113,7 @@ if (!current_grid_ok ||
     any(current_parameter_grid$alpha != 0.05)) {
   stop(
     "pcm-additive parameter grid is stale or incompatible; rerun ",
-    "reproduction-code/simulation-code/sim-spec-formal/pcm-additive-grid.R"
+    "simulation-code/sim-spec-formal/pcm-additive-grid.R"
   )
 }
 

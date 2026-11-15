@@ -14,7 +14,7 @@ reproduction_root <- function(script_file = NULL) {
         file.exists(file.path(current, "check_outputs.R"))) return(current)
     parent <- dirname(current)
     if (identical(parent, current)) {
-      stop("Could not locate the reproduction-code package root.", call. = FALSE)
+      stop("Could not locate the reproduction repository root.", call. = FALSE)
     }
     current <- parent
   }

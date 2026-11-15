@@ -143,7 +143,7 @@ validate_result() {
 }
 
 if ! command -v nextflow >/dev/null 2>&1; then
-  echo "Nextflow is required for a fresh simulation run. See reproduction-code/README.md." >&2
+  echo "Nextflow is required for a fresh simulation run. See the repository README.md." >&2
   exit 1
 fi
 

@@ -38,7 +38,7 @@ our comparison design.
 
 ## Checks and bundled results
 
-From `reproduction-code/`:
+From the repository root:
 
 ```bash
 ./run_all_real_data.sh check

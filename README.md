@@ -1,12 +1,11 @@
 # Reproduction code
 
-This standalone folder reproduces the numerical figures for **Conditional
+This standalone repository reproduces the numerical figures for **Conditional
 independence testing through marginal permutation**. Like
 [SKSD-reproduction-code](https://github.com/ZiangNiu6/SKSD-reproduction-code), it
 contains its environment, entry points, saved results, and analysis/figure code.
-Commands below run from this directory; prefix paths with `reproduction-code/`
-when running from the parent repository. Scripts also work from another working
-directory.
+Commands below run from the repository root. Scripts also work from another
+working directory.
 
 ## Environment
 
@@ -255,7 +254,7 @@ all 24 canonical numerical artifacts, including the selected Frangieh run.
 ## Layout and configuration
 
 ```text
-reproduction-code/
+PCIT-reproduction-code/
   README.md, R-packages.txt, renv.lock, renv/, .Rprofile
   setup_environment.sh, prepare_data.py, check_outputs.R
   run_all_simulations.sh, run_all_semi_synthetic.sh, run_all_real_data.sh
@@ -268,11 +267,11 @@ reproduction-code/
 The package does not load personal configuration by default.
 `PCIT_USE_RESEARCH_CONFIG=1` opts into `~/.research_config`, or use
 `PCIT_CONFIG_FILE=/absolute/path/config`. Explicit path variables take
-precedence. `PCIT_R_LIBRARY` can select an already installed library. Within
-the full research checkout, the parent project's `renv` library is also recognized;
-an exported standalone folder uses its own restored library.
+precedence. The repository discovers its restored `renv` library;
+`PCIT_R_LIBRARY` can select another already installed library.
 
-Removed regularization figures, exploratory searches, pilots, and alternative
-data analyses live under the parent repository's `development-code/`. They are
-not part of this standalone publication package. The repository-root runners
-are compatibility wrappers; new workflows should use the entry points here.
+Development analyses and historical verification receipts remain in
+[PCIT-project](https://github.com/ZiangNiu6/PCIT-project). This repository
+preserves the history of its `reproduction-code/` folder through project commit
+[`892167f`](https://github.com/ZiangNiu6/PCIT-project/commit/892167fd2159c5861c895ffe43386586f095cc1e).
+The research repository's compatibility runners use this sibling checkout.
