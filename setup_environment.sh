@@ -9,28 +9,6 @@ if ! command -v Rscript >/dev/null 2>&1; then
   echo "Install R 4.4.1 and put Rscript on PATH first." >&2
   exit 1
 fi
-# Verify the exact vendored pcmt source before restoring any packages.
-archive="$package_root/renv/cellar/pcmt_b92c1ccb4f8982fb63d35d7b0986cb3fc5af13bd.tar.gz"
-expected_sha256="82b6dc0686a376848a44b9baacca9ac3229509902fd5ff277417ba93bbce8d0e"
-if [[ ! -f "$archive" ]]; then
-  echo "Bundled pcmt source is missing: $archive" >&2
-  exit 1
-fi
-if command -v sha256sum >/dev/null 2>&1; then
-  actual_sha256=$(sha256sum "$archive")
-elif command -v shasum >/dev/null 2>&1; then
-  actual_sha256=$(shasum -a 256 "$archive")
-elif command -v openssl >/dev/null 2>&1; then
-  actual_sha256=$(openssl dgst -sha256 -r "$archive")
-else
-  echo "Install sha256sum, shasum, or openssl to verify the bundled source." >&2
-  exit 1
-fi
-actual_sha256=${actual_sha256%% *}
-if [[ "$actual_sha256" != "$expected_sha256" ]]; then
-  echo "Bundled pcmt source checksum mismatch; restore a clean copy of the archive." >&2
-  exit 1
-fi
 # Rhdf5lib supplies HDF5 archives, but macOS still needs OpenSSL's library
 # directory when compiling ondisc. Discover it without personal Makevars.
 openssl_libdir=""
@@ -61,9 +39,8 @@ if [[ "$(uname -s)" == Darwin ]]; then
 fi
 export RENV_CONFIG_SANDBOX_ENABLED=FALSE
 export RENV_PROJECT="$package_root"
-export RENV_PATHS_CELLAR="$package_root/renv/cellar"
-# renv's cellar lookup uses the active project/cwd, including when restore()
-# receives an explicit project argument. Pin both so any caller cwd works.
+# Select the active project as well as the explicit restore target so setup
+# works from any caller's working directory.
 cd "$package_root"
 restore_status=0
 Rscript --vanilla - "$package_root" <<'RS' || restore_status=$?

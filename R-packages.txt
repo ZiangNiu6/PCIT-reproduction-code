@@ -99,7 +99,7 @@ nlme	3.1-166	Repository
 ondisc	0.0.5	GitHub	5adcc537664aada08c3e79f08f2a944a0d31598d
 openssl	2.3.5	Repository
 patchwork	1.3.2	Repository
-pcmt	0.1.0	GitHub	b92c1ccb4f8982fb63d35d7b0986cb3fc5af13bd
+pcmt	0.1.0	GitHub	92c17ecc2359cfd4cc02c306bef793e1fbd4c77e
 pillar	1.11.1	Repository
 pkgconfig	2.0.3	Repository
 prettyunits	1.2.0	Repository

@@ -27,9 +27,11 @@ to the directory containing `libcrypto` for a custom installation. Personal
 R Makevars files are not required for this library-path configuration.
 
 `renv.lock` pins the R/Bioconductor packages; `R-packages.txt` is a readable
-inventory. The exact `pcmt` source revision is included in `renv/cellar/` so it
-does not require reviewer GitHub credentials. Runners never restore packages or
-contact package repositories unless explicitly invoked with `PCIT_RESTORE=1`.
+inventory. Setup installs [`pcmt`](https://github.com/ZiangNiu6/pcmt) from its
+public GitHub repository at commit
+`92c17ecc2359cfd4cc02c306bef793e1fbd4c77e`; no GitHub credentials are required.
+Runners never restore packages or contact package repositories unless
+explicitly invoked with `PCIT_RESTORE=1`.
 
 ## Quick reproduction from bundled results
 
