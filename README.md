@@ -1,9 +1,8 @@
 # Reproduction code
 
 This standalone repository reproduces the numerical figures for **Conditional
-independence testing through marginal permutation**. Like
-[SKSD-reproduction-code](https://github.com/ZiangNiu6/SKSD-reproduction-code), it
-contains its environment, entry points, saved results, and analysis/figure code.
+independence testing through marginal permutation**. It contains the environment,
+entry points, saved results, and analysis/figure code.
 Commands below run from the repository root. Scripts also work from another
 working directory.
 
@@ -146,12 +145,10 @@ combine the complete 42-file grid, then run `plot-only`.
 Optional `PROJECT` and `MEM` override scheduler settings. Expect a substantial
 publication-scale workload; no new end-to-end runtime benchmark is claimed.
 
-All 42 settings are computed afresh. Existing setup or combined outputs are
-refused rather than skipped or replaced. New outputs retain input/code and
-package/session metadata for inspection; source hashes are not used to resume
-older work. Plot-only reads the complete current v4 combined artifact directly,
-without raw inputs or automatic recombination. Older v2/v3 schemas and their
-selection/fallback paths have been removed.
+All 42 settings are computed afresh. Numerical runs require a fresh CCLE
+output directory. New outputs record input/code fingerprints and package/session
+metadata. `plot-only` reads the complete v4 combined artifact directly,
+without raw inputs or recombination.
 
 The current main CCLE composite has two sparsity rows and three columns:
 all-ten-target calibration, representative-target calibration, and
@@ -188,11 +185,10 @@ eligibility checks; null candidates exclude all annotated targeted genes.
 The paper's separate effective-sample-size threshold of seven is not applied,
 and this is not a reproduction of its complete benchmarking protocol.
 
-The active analysis uses only **BH q=0.10**. Superseded result bundles,
-their plots, and the historical schema selector have been removed. The
-selected completed q=0.10 run is retained exactly, with a compact archive of
-its original execution receipts and source snapshots. Validation does not
-depend on the removed result files or on access to raw data for plotting.
+The analysis uses **BH q=0.10**. Bundled results preserve the completed run's
+numerical outputs, with execution receipts and source snapshots in
+`results/frangieh-2021/score-calibration-gb2024-q10/provenance/`.
+Plotting and validation use these bundled files and require no raw data.
 
 The processed inputs are published in
 [Barry et al.'s Zenodo data archive, version v1](https://zenodo.org/records/10976417).
@@ -269,9 +265,3 @@ The package does not load personal configuration by default.
 `PCIT_CONFIG_FILE=/absolute/path/config`. Explicit path variables take
 precedence. The repository discovers its restored `renv` library;
 `PCIT_R_LIBRARY` can select another already installed library.
-
-Development analyses and historical verification receipts remain in
-[PCIT-project](https://github.com/ZiangNiu6/PCIT-project). This repository
-preserves the history of its `reproduction-code/` folder through project commit
-[`892167f`](https://github.com/ZiangNiu6/PCIT-project/commit/892167fd2159c5861c895ffe43386586f095cc1e).
-The research repository's compatibility runners use this sibling checkout.

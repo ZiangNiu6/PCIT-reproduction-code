@@ -1,8 +1,7 @@
 # Frangieh reproduction workflow
 
-The active analysis and bundled results use **BH q=0.10**, GB2024 preprocessing,
-and schema `perturb_score5_v4_gb2024_q10`. The superseded result bundles and
-historical schema selector have been removed.
+The analysis and bundled results use **BH q=0.10**, GB2024 preprocessing,
+and schema `perturb_score5_v4_gb2024_q10`.
 
 ## Preprocessing contract
 
@@ -60,8 +59,8 @@ explicitly marked `imported_verified_q10`, with the original result bytes,
 execution receipts and source snapshots retained for verification. Historical
 code/input metadata is recorded separately; adoption is not reported as a
 fresh execution. These fingerprints describe the recorded run; validation
-does not require the present source files or raw inputs to match them. Compact readable records are in the result
-folder's `provenance/` directory. No removed result bundle is a live dependency.
+does not require the present source files or raw inputs to match them.
+Compact records are in the result folder's `provenance/` directory.
 
 ## Complete numerical runs
 
